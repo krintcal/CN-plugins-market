@@ -96,8 +96,8 @@ const MESSAGES = {
     inFlight: name => `translating ${name}…`,
     stop: 'Stop',
     progress: (done, total) => `${done}/${total}…`,
-    summary: (shown, done, left) =>
-      `${shown} shown · ${done} translated${left ? ` · ${left} left` : ''}`,
+    statusLine: (shown, done, left, when) =>
+      `${shown} shown · ${done} translated${left ? ` · ${left} left` : ''} · fetched ${when}`,
     install: 'Install',
     installed: 'Installed',
     openRepo: 'Open the repository',
@@ -164,8 +164,8 @@ const MESSAGES = {
     inFlight: name => `正在翻 ${name}…`,
     stop: '停止',
     progress: (done, total) => `${done}/${total}…`,
-    summary: (shown, done, left) =>
-      `当前 ${shown} 条 · 已翻译 ${done} 条${left ? ` · 待翻 ${left} 条` : ''}`,
+    statusLine: (shown, done, left, when) =>
+      `当前 ${shown} 条 · 已翻译 ${done} 条${left ? ` · 待翻 ${left} 条` : ''} · 拉取于${when}`,
     install: '安装',
     installed: '已安装',
     openRepo: '打开源码仓库',
@@ -231,8 +231,8 @@ const MESSAGES = {
     inFlight: name => `正在翻 ${name}…`,
     stop: '停止',
     progress: (done, total) => `${done}/${total}…`,
-    summary: (shown, done, left) =>
-      `目前 ${shown} 條 · 已翻譯 ${done} 條${left ? ` · 待翻譯 ${left} 條` : ''}`,
+    statusLine: (shown, done, left, when) =>
+      `目前 ${shown} 條 · 已翻譯 ${done} 條${left ? ` · 待翻譯 ${left} 條` : ''} · 擷取於${when}`,
     install: '安裝',
     installed: '已安裝',
     openRepo: '開啟原始碼倉庫',
@@ -749,136 +749,154 @@ function CatalogPage() {
   return jsxs('div', {
     className: 'flex h-full min-h-0 flex-col gap-3 p-4',
     children: [
-      // ── header ────────────────────────────────────────────────────────────
+      // ── header: title + one status line, actions on the right ─────────────
       jsxs('div', {
-        className: 'flex flex-wrap items-center gap-2',
+        className: 'flex flex-wrap items-center justify-between gap-x-3 gap-y-2',
         children: [
-          jsx('div', { className: 'text-sm font-medium', children: t('title') }),
-          jsx('span', {
-            className: 'text-xs text-(--ui-text-tertiary)',
-            children:
-              status === 'ready'
-                ? `${t('count', entries.length)} · ${t('fetched', agoText(t, fetchedAt))}`
-                : ''
+          jsxs('div', {
+            className: 'flex min-w-0 items-baseline gap-2',
+            children: [
+              jsx('div', { className: 'shrink-0 text-sm font-medium', children: t('title') }),
+              jsx('span', {
+                className: 'truncate text-xs text-(--ui-text-tertiary)',
+                children:
+                  status === 'ready'
+                    ? t(
+                        'statusLine',
+                        filtered.length,
+                        translatedCount,
+                        pending.length,
+                        agoText(t, fetchedAt)
+                      )
+                    : ''
+              })
+            ]
           }),
-          jsx('div', { className: 'flex-1' }),
-          jsx('input', {
-            value: query,
-            onChange: event => setQuery(event.target.value),
-            placeholder: t('search'),
-            'aria-label': t('search'),
-            className:
-              'h-7 w-56 rounded-md border border-(--ui-border) bg-(--ui-bg-input) px-2 text-xs outline-none'
-          }),
-          jsx(Tip, {
-            label: t('refresh'),
-            children: jsx(Button, {
-              size: 'sm',
-              variant: 'ghost',
-              type: 'button',
-              disabled: status === 'loading',
-              onClick: loadCatalog,
-              children: '⟳'
-            })
-          }),
-          jsx(Button, {
-            size: 'sm',
-            variant: selectMode ? 'secondary' : 'ghost',
-            type: 'button',
-            disabled: Boolean(bulk),
-            onClick: toggleSelectMode,
-            children: selectMode ? t('exitSelectMode') : t('selectMode')
-          }),
-          jsx(Tip, {
-            label: t('translateMissing', pending.length),
-            children: jsx(Button, {
-              size: 'sm',
-              variant: 'secondary',
-              type: 'button',
-              disabled: !gateway || !pending.length || Boolean(bulk),
-              onClick: translateMissing,
-              children: bulk
-                ? jsxs('span', {
-                    className: 'inline-flex items-center gap-1.5',
-                    children: [jsx(GlyphSpinner, {}), t('progress', bulk.done, bulk.total)]
+          jsxs('div', {
+            className: 'flex shrink-0 flex-wrap items-center justify-end gap-2',
+            children: [
+              jsx('input', {
+                value: query,
+                onChange: event => setQuery(event.target.value),
+                placeholder: t('search'),
+                'aria-label': t('search'),
+                className:
+                  'h-7 w-48 rounded-md border border-(--ui-border) bg-(--ui-bg-input) px-2 text-xs outline-none'
+              }),
+              jsx(Tip, {
+                label: t('refresh'),
+                children: jsx(Button, {
+                  size: 'sm',
+                  variant: 'ghost',
+                  type: 'button',
+                  disabled: status === 'loading',
+                  onClick: loadCatalog,
+                  children: '⟳'
+                })
+              }),
+              jsx(Button, {
+                size: 'sm',
+                variant: selectMode ? 'secondary' : 'outline',
+                type: 'button',
+                disabled: Boolean(bulk),
+                onClick: toggleSelectMode,
+                children: selectMode ? t('exitSelectMode') : t('selectMode')
+              }),
+              jsx(Tip, {
+                label: t('translateMissing', pending.length),
+                children: jsx(Button, {
+                  size: 'sm',
+                  variant: 'secondary',
+                  type: 'button',
+                  disabled: !gateway || !pending.length || Boolean(bulk),
+                  onClick: translateMissing,
+                  children: bulk
+                    ? jsxs('span', {
+                        className: 'inline-flex items-center gap-1.5',
+                        children: [jsx(GlyphSpinner, {}), t('progress', bulk.done, bulk.total)]
+                      })
+                    : t('translateMissing', pending.length)
+                })
+              }),
+              bulk
+                ? jsx(Button, {
+                    size: 'sm',
+                    variant: 'ghost',
+                    type: 'button',
+                    onClick: stopBulk,
+                    children: t('stop')
                   })
-                : t('translateMissing', pending.length)
-            })
+                : null
+            ]
           }),
           bulk && bulk.current
-            ? jsx('span', {
-                className: 'text-xs text-(--ui-text-tertiary)',
+            ? jsx('div', {
+                className: 'w-full text-xs text-(--ui-text-tertiary)',
                 children: t('inFlight', bulk.current)
-              })
-            : null,
-          bulk
-            ? jsx(Button, {
-                size: 'sm',
-                variant: 'ghost',
-                type: 'button',
-                onClick: stopBulk,
-                children: t('stop')
               })
             : null
         ]
       }),
 
-      // ── language ──────────────────────────────────────────────────────────
+      // ── options: ranking + target language on one line ─────────────────────
       jsxs('div', {
-        className: 'flex flex-wrap items-center gap-2 text-xs',
+        className: 'flex flex-wrap items-center gap-x-5 gap-y-2 text-xs',
         children: [
-          jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('targetLang') }),
-          jsxs('select', {
-            value: target,
-            onChange: event => setTarget(event.target.value),
-            'aria-label': t('targetLang'),
-            className:
-              'h-6 rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none',
-            children: TARGETS.map(option =>
-              jsx(
-                'option',
-                { value: option.id, children: option.endonym || t('autoLang') },
-                option.id
+          jsxs('div', {
+            className: 'flex items-center gap-2',
+            children: [
+              jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('rankBy') }),
+              ...SORTS.map(option =>
+                jsx(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => setSort(option.id),
+                    className: cn(
+                      'rounded px-2 py-0.5',
+                      option.id === sort
+                        ? 'bg-(--ui-bg-quaternary) font-medium'
+                        : 'text-(--ui-text-tertiary)'
+                    ),
+                    children: t(option.label)
+                  },
+                  option.id
+                )
               )
-            )
+            ]
+          }),
+          jsxs('div', {
+            className: 'flex items-center gap-2',
+            children: [
+              jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('targetLang') }),
+              jsxs('select', {
+                value: target,
+                onChange: event => setTarget(event.target.value),
+                'aria-label': t('targetLang'),
+                className:
+                  'h-6 rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none',
+                children: TARGETS.map(option =>
+                  jsx(
+                    'option',
+                    { value: option.id, children: option.endonym || t('autoLang') },
+                    option.id
+                  )
+                )
+              })
+            ]
           })
         ]
       }),
 
-      // ── ranking ───────────────────────────────────────────────────────────
+      // ── categories: one scrollable line, never a ragged wrap ─────────────
       jsxs('div', {
-        className: 'flex flex-wrap items-center gap-2 text-xs',
-        children: [
-          jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('rankBy') }),
-          ...SORTS.map(option =>
-            jsx(
-              'button',
-              {
-                type: 'button',
-                onClick: () => setSort(option.id),
-                className: cn(
-                  'rounded px-2 py-0.5',
-                  option.id === sort
-                    ? 'bg-(--ui-bg-quaternary) font-medium'
-                    : 'text-(--ui-text-tertiary)'
-                ),
-                children: t(option.label)
-              },
-              option.id
-            )
-          )
-        ]
-      }),
-
-      // ── categories ────────────────────────────────────────────────────────
-      jsxs('div', {
-        className: 'flex flex-wrap items-center gap-1 text-xs',
+        className: 'flex min-w-0 items-center gap-1 overflow-x-auto pb-1 text-xs',
         children: [
           jsx('button', {
             type: 'button',
             onClick: () => setCategory(''),
             className: cn(
-              'rounded px-2 py-0.5',
+              'shrink-0 whitespace-nowrap rounded px-2 py-0.5',
               category === '' ? 'bg-(--ui-bg-quaternary) font-medium' : 'text-(--ui-text-tertiary)'
             ),
             children: t('all', entries.length)
@@ -890,7 +908,7 @@ function CatalogPage() {
                 type: 'button',
                 onClick: () => setCategory(slug === category ? '' : slug),
                 className: cn(
-                  'rounded px-2 py-0.5',
+                  'shrink-0 whitespace-nowrap rounded px-2 py-0.5',
                   slug === category
                     ? 'bg-(--ui-bg-quaternary) font-medium'
                     : 'text-(--ui-text-tertiary)'
@@ -945,13 +963,6 @@ function CatalogPage() {
                 })
               })
             ]
-          })
-        : null,
-
-      status === 'ready'
-        ? jsx('div', {
-            className: 'text-xs text-(--ui-text-tertiary)',
-            children: t('summary', filtered.length, translatedCount, pending.length)
           })
         : null,
 
