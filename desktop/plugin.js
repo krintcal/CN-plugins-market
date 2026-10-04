@@ -4,15 +4,17 @@
  * Adds a "Plugin catalog" page to the Hermes Desktop app (sidebar nav +
  * `/cn-plugins-market` route). It reads the official curated catalog
  * (`plugins.json`), lets you rank it four ways, install a plugin with one
- * click, and translate any plugin's blurb into the language you pick —
- * translating each blurb ONCE and caching the result, so repeat browsing
- * costs nothing.
+ * click, pick any subset with checkboxes, and translate the blow-by-blow
+ * blurb into the language you pick — each translation cached PER LANGUAGE and
+ * PER pinned commit, so repeat browsing costs nothing and switching language
+ * never shows you a stale blurb.
  *
  * Desktop-only plugin: a single ESM file using only the public plugin SDK
  * (`@hermes/plugin-sdk`). No Python half, no credentials, no core patches.
  *
- * Cost note: only the "translate" action calls a model, one entry per call,
- * against whatever provider/model the user already has active.
+ * Cost note: only the translate action calls a model — one call per batch of
+ * up to BATCH_SIZE entries, against whatever provider/model the user already
+ * has active.
  */
 import {
   Button,
@@ -36,11 +38,17 @@ const PAGE_PATH = '/cn-plugins-market'
 const CATALOG_URL = 'https://nousresearch.github.io/hermes-agent/docs/api/plugins.json'
 
 const CATALOG_TIMEOUT_MS = 30000
-const LLM_TIMEOUT_MS = 180000
-/** Hard cap on the blurb text handed to the model, so one click can't run away. */
+const LLM_TIMEOUT_MS = 240000
+/** Hard cap on ONE entry's blurb text, so a click can't run away. */
 const MAX_CHARS = 1500
+/** Entries per model call. Bigger = fewer round-trips, smaller = finer progress. */
+const BATCH_SIZE = 8
+/** Stop a bulk run after this many failed calls in a row (quota, offline, …). */
+const MAX_CONSECUTIVE_FAILURES = 3
+
 const PREFS_KEY = 'prefs'
-const CACHE_KEY = 'translations'
+/** Bumped when the cache key shape changes, so stale entries can't be read. */
+const CACHE_KEY = 'translations.v2'
 
 // ---------------------------------------------------------------------------
 // i18n
@@ -78,6 +86,11 @@ const MESSAGES = {
     translate: 'Translate',
     translating: 'Translating…',
     translateMissing: n => `Translate ${n} untranslated`,
+    translateSelected: n => `Translate ${n} selected`,
+    selected: n => `${n} selected`,
+    selectAll: n => `Select all ${n} shown`,
+    clearSelection: 'Clear',
+    selectOne: name => `Select ${name}`,
     stop: 'Stop',
     progress: (done, total) => `${done}/${total}…`,
     summary: (shown, done, left) =>
@@ -88,7 +101,7 @@ const MESSAGES = {
     targetLang: 'Translate into',
     autoLang: 'Follow the app language',
     failed: message => `Translation failed: ${message}`,
-    failedOne: index => `Entry ${index} failed and was skipped`,
+    failedRepeatedly: 'Translations kept failing — stopped.',
     installedOk: name => `${name} installed`,
     installFailed: message => `Install failed: ${message}`,
     openFailed: 'Could not open that link',
@@ -101,9 +114,11 @@ const MESSAGES = {
     daysAgo: n => `${n} days ago`,
     monthsAgo: n => `${n} months ago`,
     yearsAgo: n => `${n} years ago`,
-    promptIntro: 'Translate the following software plugin blurb into',
+    promptIntro: 'Translate the following software plugin blurbs into',
     promptRules:
-      'Keep plugin names, commands, file paths, URLs, version numbers and numbers exactly as they are. No notes, no preamble: output the translation only, on one line.'
+      'Keep plugin names, commands, file paths, URLs, version numbers and numbers exactly as they are.',
+    batchRule: n =>
+      `You get ${n} numbered items. Answer with exactly ${n} lines, one per item, each starting with the same [[i]] marker followed by the translation and nothing else.`
   },
   zh: {
     nav: '插件目录',
@@ -136,6 +151,11 @@ const MESSAGES = {
     translate: '译',
     translating: '译…',
     translateMissing: n => `翻译未翻译的 ${n} 条`,
+    translateSelected: n => `翻译选中的 ${n} 条`,
+    selected: n => `已选 ${n} 条`,
+    selectAll: n => `全选当前 ${n} 条`,
+    clearSelection: '清空',
+    selectOne: name => `选中 ${name}`,
     stop: '停止',
     progress: (done, total) => `${done}/${total}…`,
     summary: (shown, done, left) =>
@@ -146,7 +166,7 @@ const MESSAGES = {
     targetLang: '翻译成',
     autoLang: '跟随界面语言',
     failed: message => `翻译失败：${message}`,
-    failedOne: index => `第 ${index} 条失败，已跳过`,
+    failedRepeatedly: '连续失败，已停止翻译',
     installedOk: name => `${name} 已安装`,
     installFailed: message => `安装失败：${message}`,
     openFailed: '打不开这个链接',
@@ -159,9 +179,10 @@ const MESSAGES = {
     daysAgo: n => `${n} 天前`,
     monthsAgo: n => `${n} 个月前`,
     yearsAgo: n => `${n} 年前`,
-    promptIntro: '把下面这条软件插件简介翻译成',
-    promptRules:
-      '插件名、命令、文件路径、URL、版本号、专有名词和数字保持原样。不要解释、不要加注、不要前后缀：只输出译文本身，一行。'
+    promptIntro: '把下面这些软件插件简介翻译成',
+    promptRules: '插件名、命令、文件路径、URL、版本号、专有名词和数字保持原样。',
+    batchRule: n =>
+      `下面有 ${n} 条编号条目。请按同样顺序输出 ${n} 行，每行以对应的 [[i]] 标记开头，后面只跟译文，不要任何其它内容。`
   },
   'zh-hant': {
     nav: '外掛目錄',
@@ -194,6 +215,11 @@ const MESSAGES = {
     translate: '譯',
     translating: '譯…',
     translateMissing: n => `翻譯未翻譯的 ${n} 條`,
+    translateSelected: n => `翻譯選取的 ${n} 條`,
+    selected: n => `已選 ${n} 條`,
+    selectAll: n => `全選目前 ${n} 條`,
+    clearSelection: '清空',
+    selectOne: name => `選取 ${name}`,
     stop: '停止',
     progress: (done, total) => `${done}/${total}…`,
     summary: (shown, done, left) =>
@@ -204,7 +230,7 @@ const MESSAGES = {
     targetLang: '翻譯成',
     autoLang: '跟隨介面語言',
     failed: message => `翻譯失敗：${message}`,
-    failedOne: index => `第 ${index} 條失敗，已略過`,
+    failedRepeatedly: '連續失敗，已停止翻譯',
     installedOk: name => `${name} 已安裝`,
     installFailed: message => `安裝失敗：${message}`,
     openFailed: '無法開啟這個連結',
@@ -217,9 +243,10 @@ const MESSAGES = {
     daysAgo: n => `${n} 天前`,
     monthsAgo: n => `${n} 個月前`,
     yearsAgo: n => `${n} 年前`,
-    promptIntro: '把下面這條軟體外掛簡介翻譯成',
-    promptRules:
-      '外掛名稱、指令、檔案路徑、URL、版本號、專有名詞與數字保持原樣。不要解釋、不要加註、不要前後綴：只輸出譯文本身，一行。'
+    promptIntro: '把下面這些軟體外掛簡介翻譯成',
+    promptRules: '外掛名稱、指令、檔案路徑、URL、版本號、專有名詞與數字保持原樣。',
+    batchRule: n =>
+      `下面有 ${n} 條編號條目。請按同樣順序輸出 ${n} 行，每行以對應的 [[i]] 標記開頭，後面只跟譯文，不要任何其它內容。`
   }
 }
 
@@ -257,7 +284,8 @@ const LOCALE_TARGET = {
 // ---------------------------------------------------------------------------
 
 let pluginCtx = null
-let cache = {} // `${name}@${sha}` → translated blurb
+/** `${name}@${sha}#${target}` → translated blurb. Language is part of the key. */
+let cache = {}
 let prefs = { sort: 'stars', category: '', target: 'auto' }
 
 function readStored(key) {
@@ -292,8 +320,9 @@ function hydrate() {
   if (storedPrefs && typeof storedPrefs === 'object') prefs = { ...prefs, ...storedPrefs }
 }
 
-function cacheKey(entry) {
-  return `${entry.name}@${entry.shaShort || entry.sha || ''}`
+/** Cache key carries the target language: switching language ≠ "already done". */
+function cacheKey(entry, target) {
+  return `${entry.name}@${entry.shaShort || entry.sha || ''}#${target}`
 }
 
 function toolsOf(entry) {
@@ -347,14 +376,14 @@ function categoryLabel(t, slug) {
   return label === key ? slug : label
 }
 
-function openExternal(url) {
+function openExternal(url, failMessage) {
   if (!url) return
   try {
     if (!pluginCtx || !pluginCtx.os || !pluginCtx.os.openExternal) return
     const pending = pluginCtx.os.openExternal(url)
     if (pending && typeof pending.then === 'function') {
       pending.then(ok => {
-        if (ok === false) host.notify({ kind: 'error', message: 'Could not open that link' })
+        if (ok === false) host.notify({ kind: 'error', message: failMessage })
       })
     }
   } catch {
@@ -362,19 +391,68 @@ function openExternal(url) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// translation
+// ---------------------------------------------------------------------------
+
 async function translateBlurb(text, instructions, sessionId) {
+  const res = await host.request(
+    'llm.oneshot',
+    { instructions, input: text, session_id: sessionId, max_tokens: 640, temperature: 0.1 },
+    LLM_TIMEOUT_MS
+  )
+  return res && typeof res.text === 'string' ? res.text.trim() : ''
+}
+
+/**
+ * Batch sibling of `translateBlurb`: N entries in ONE call.
+ * Items are numbered `[[i]]`; the model is asked to echo the markers, so a
+ * short or reordered answer still maps back to the right entry.
+ */
+async function translateMany(texts, instructions, sessionId) {
+  const input = texts.map((text, index) => `[[${index + 1}]] ${text}`).join('\n')
   const res = await host.request(
     'llm.oneshot',
     {
       instructions,
-      input: text,
+      input,
       session_id: sessionId,
-      max_tokens: 640,
+      max_tokens: Math.min(4096, 480 * texts.length + 200),
       temperature: 0.1
     },
     LLM_TIMEOUT_MS
   )
-  return res && typeof res.text === 'string' ? res.text.trim() : ''
+  return parseBatch(res && typeof res.text === 'string' ? res.text : '', texts.length)
+}
+
+function cleanTranslation(value) {
+  return String(value || '')
+    .replace(/^\s*```[a-zA-Z]*\s*/, '')
+    .replace(/\s*```\s*$/, '')
+    .trim()
+}
+
+/** Split a `[[i]] translation` answer into an array indexed from 0. */
+function parseBatch(text, expected) {
+  const out = new Array(expected).fill('')
+  const re = /\[\[(\d+)\]\]\s*([\s\S]*?)(?=\n?\s*\[\[\d+\]\]|$)/g
+  let match = re.exec(text)
+  while (match) {
+    const index = Number(match[1]) - 1
+    if (index >= 0 && index < expected) out[index] = cleanTranslation(match[2])
+    match = re.exec(text)
+  }
+  if (!out.some(Boolean)) {
+    // Markers ignored (or a single-item chunk): fall back to the shape we got.
+    const cleaned = cleanTranslation(text)
+    if (expected === 1) return [cleaned]
+    const lines = cleaned
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+    if (lines.length === expected) return lines
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +473,7 @@ function CatalogPage() {
   const [category, setCategory] = useState(prefs.category)
   const [target, setTarget] = useState(prefs.target)
   const [installed, setInstalled] = useState(new Set())
+  const [selected, setSelected] = useState(() => new Set())
   const [busyName, setBusyName] = useState('')
   const [bulk, setBulk] = useState(null)
   const [tick, setTick] = useState(0)
@@ -408,6 +487,10 @@ function CatalogPage() {
   const instructions = useMemo(
     () => `${t('promptIntro')} ${resolvedTarget}。${t('promptRules')}`,
     [t, resolvedTarget]
+  )
+  const batchInstructions = useMemo(
+    () => `${instructions} ${t('batchRule', BATCH_SIZE)}`,
+    [instructions, t]
   )
 
   const loadCatalog = useCallback(async () => {
@@ -475,7 +558,7 @@ function CatalogPage() {
       .filter(entry => (category ? (entry.category || '') === category : true))
       .filter(entry => {
         if (!needle) return true
-        const translated = cache[cacheKey(entry)] || ''
+        const translated = cache[cacheKey(entry, resolvedTarget)] || ''
         return (
           (entry.name || '').toLowerCase().includes(needle) ||
           (entry.description || '').toLowerCase().includes(needle) ||
@@ -484,13 +567,49 @@ function CatalogPage() {
       })
       .sort((a, b) => active.cmp(a, b) || (b.stars || 0) - (a.stars || 0))
     // `tick` re-sorts after a translation lands so search-visible state stays true.
-  }, [entries, query, category, sort, tick])
+  }, [entries, query, category, sort, resolvedTarget, tick])
 
-  const pending = useMemo(() => filtered.filter(entry => !cache[cacheKey(entry)]), [filtered, tick])
+  const pending = useMemo(
+    () => filtered.filter(entry => !cache[cacheKey(entry, resolvedTarget)]),
+    [filtered, resolvedTarget, tick]
+  )
+
+  /** Selection spans the whole catalog, so it survives filter changes. */
+  const selectedEntries = useMemo(
+    () => entries.filter(entry => selected.has(entry.name)),
+    [entries, selected]
+  )
+  const selectedPending = useMemo(
+    () =>
+      selectedEntries.filter(
+        entry => !cache[cacheKey(entry, resolvedTarget)] && (entry.description || '').trim()
+      ),
+    [selectedEntries, resolvedTarget, tick]
+  )
+
+  const toggleSelected = useCallback(name => {
+    haptic('tap')
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }, [])
+
+  const selectAllShown = useCallback(() => {
+    haptic('tap')
+    setSelected(prev => new Set([...prev, ...filtered.map(entry => entry.name)]))
+  }, [filtered])
+
+  const clearSelection = useCallback(() => {
+    haptic('tap')
+    setSelected(new Set())
+  }, [])
 
   const translateEntry = useCallback(
     async entry => {
-      const key = cacheKey(entry)
+      const key = cacheKey(entry, resolvedTarget)
       if (cache[key] || !(entry.description || '').trim()) return
       setBusyName(entry.name)
       const input = entry.description.slice(0, MAX_CHARS)
@@ -510,35 +629,64 @@ function CatalogPage() {
         setBusyName('')
       }
     },
-    [instructions, t]
+    [instructions, resolvedTarget, t]
   )
 
-  const translateMissing = useCallback(async () => {
-    const queue = filtered.filter(entry => !cache[cacheKey(entry)] && (entry.description || '').trim())
-    if (!queue.length) return
-    const state = { done: 0, total: queue.length, stop: false }
-    bulkRef.current = state
-    setBulk({ ...state })
-    const sessionId =
-      host.state.focusedSessionId.get() || host.state.activeSessionId.get() || undefined
-    for (const entry of queue) {
-      if (bulkRef.current && bulkRef.current.stop) break
-      try {
-        const out = await translateBlurb(entry.description.slice(0, MAX_CHARS), instructions, sessionId)
-        if (out) {
-          cache[cacheKey(entry)] = out
-          writeStored(CACHE_KEY, cache)
-        }
-      } catch {
-        host.notify({ kind: 'error', message: t('failedOne', state.done + 1) })
-      }
-      state.done += 1
+  /** One runner for both bulk entries: batches of BATCH_SIZE, stoppable. */
+  const runTranslation = useCallback(
+    async list => {
+      const queue = list.filter(entry => !cache[cacheKey(entry, resolvedTarget)] && (entry.description || '').trim())
+      if (!queue.length) return
+      const state = { done: 0, total: queue.length, stop: false }
+      bulkRef.current = state
       setBulk({ ...state })
-      setTick(v => v + 1)
-    }
-    bulkRef.current = null
-    setBulk(null)
-  }, [filtered, instructions, t])
+      const sessionId =
+        host.state.focusedSessionId.get() || host.state.activeSessionId.get() || undefined
+      let consecutiveFailures = 0
+      for (let start = 0; start < queue.length; start += BATCH_SIZE) {
+        if (bulkRef.current && bulkRef.current.stop) break
+        const chunk = queue.slice(start, start + BATCH_SIZE)
+        let translations = null
+        try {
+          translations = await translateMany(
+            chunk.map(entry => entry.description.slice(0, MAX_CHARS)),
+            batchInstructions,
+            sessionId
+          )
+        } catch {
+          translations = null
+        }
+        if (translations && translations.some(Boolean)) {
+          consecutiveFailures = 0
+          chunk.forEach((entry, index) => {
+            const out = translations[index]
+            if (out) cache[cacheKey(entry, resolvedTarget)] = out
+          })
+          writeStored(CACHE_KEY, cache)
+        } else {
+          consecutiveFailures += 1
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            host.notify({ kind: 'error', message: t('failedRepeatedly') })
+            break
+          }
+        }
+        state.done = Math.min(state.total, start + chunk.length)
+        setBulk({ ...state })
+        setTick(v => v + 1)
+      }
+      bulkRef.current = null
+      setBulk(null)
+    },
+    [batchInstructions, resolvedTarget, t]
+  )
+
+  const translateMissing = useCallback(() => {
+    void runTranslation(pending)
+  }, [pending, runTranslation])
+
+  const translateSelected = useCallback(() => {
+    void runTranslation(selectedPending)
+  }, [selectedPending, runTranslation])
 
   const stopBulk = useCallback(() => {
     if (bulkRef.current) bulkRef.current.stop = true
@@ -714,6 +862,51 @@ function CatalogPage() {
         ]
       }),
 
+      // ── selection ─────────────────────────────────────────────────────────
+      status === 'ready'
+        ? jsxs('div', {
+            className: 'flex flex-wrap items-center gap-2 text-xs',
+            children: [
+              jsx('span', {
+                className: cn(
+                  'tabular-nums',
+                  selected.size ? 'font-medium' : 'text-(--ui-text-tertiary)'
+                ),
+                children: t('selected', selected.size)
+              }),
+              jsx(Button, {
+                size: 'xs',
+                variant: 'ghost',
+                type: 'button',
+                disabled: !filtered.length || Boolean(bulk),
+                onClick: selectAllShown,
+                children: t('selectAll', filtered.length)
+              }),
+              selected.size
+                ? jsx(Button, {
+                    size: 'xs',
+                    variant: 'ghost',
+                    type: 'button',
+                    disabled: Boolean(bulk),
+                    onClick: clearSelection,
+                    children: t('clearSelection')
+                  })
+                : null,
+              jsx(Tip, {
+                label: t('translateSelected', selectedPending.length),
+                children: jsx(Button, {
+                  size: 'xs',
+                  variant: 'secondary',
+                  type: 'button',
+                  disabled: !gateway || !selectedPending.length || Boolean(bulk),
+                  onClick: translateSelected,
+                  children: t('translateSelected', selectedPending.length)
+                })
+              })
+            ]
+          })
+        : null,
+
       status === 'ready'
         ? jsx('div', {
             className: 'text-xs text-(--ui-text-tertiary)',
@@ -737,19 +930,30 @@ function CatalogPage() {
               children: jsx('div', {
                 className: 'flex flex-col gap-2 pr-2',
                 children: filtered.map((entry, rank) => {
-                  const key = cacheKey(entry)
+                  const key = cacheKey(entry, resolvedTarget)
                   const blurb = cache[key]
                   const isInstalled = installed.has(entry.name)
+                  const isSelected = selected.has(entry.name)
                   const busy = busyName === entry.name
                   const toolCount = toolsOf(entry)
                   return jsxs(
                     'div',
                     {
-                      className: 'rounded-md border border-(--ui-border) p-3',
+                      className: cn(
+                        'rounded-md border p-3',
+                        isSelected ? 'border-(--ui-accent)' : 'border-(--ui-border)'
+                      ),
                       children: [
                         jsxs('div', {
                           className: 'flex flex-wrap items-center gap-2',
                           children: [
+                            jsx('input', {
+                              type: 'checkbox',
+                              checked: isSelected,
+                              onChange: () => toggleSelected(entry.name),
+                              'aria-label': t('selectOne', entry.name),
+                              className: 'h-3.5 w-3.5 shrink-0 cursor-pointer'
+                            }),
                             jsx('span', {
                               className: cn(
                                 'inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-xs',
@@ -763,7 +967,7 @@ function CatalogPage() {
                               label: entry.repo || entry.docsUrl || '',
                               children: jsx('button', {
                                 type: 'button',
-                                onClick: () => openExternal(entry.repo || entry.docsUrl),
+                                onClick: () => openExternal(entry.repo || entry.docsUrl, t('openFailed')),
                                 className: cn(
                                   'cursor-pointer text-sm font-medium underline-offset-4',
                                   'hover:underline hover:text-(--ui-text-primary)'
