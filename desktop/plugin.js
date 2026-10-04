@@ -47,6 +47,10 @@ const BATCH_SIZE = 8
 /** Stop a bulk run after this many failed calls in a row (quota, offline, …). */
 const MAX_CONSECUTIVE_FAILURES = 3
 
+/** One look for every compact filter control. */
+const SELECT_CLASS =
+  'h-6 max-w-[15rem] rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none'
+
 const PREFS_KEY = 'prefs'
 /** Bumped when the cache key shape changes, so stale entries can't be read. */
 const CACHE_KEY = 'translations.v2'
@@ -81,6 +85,11 @@ const MESSAGES = {
       general: 'General'
     },
     uncategorised: 'Uncategorised',
+    filterCategory: 'Category',
+    sourceLabel: 'Source',
+    sourceUser: 'Mine',
+    sourceBundled: 'Built-in',
+    sourceAll: 'Everything',
     tier: { official: 'official', community: 'community', bundled: 'bundled', user: 'user' },
     translate: 'Translate',
     translating: 'Translating…',
@@ -155,6 +164,11 @@ const MESSAGES = {
       general: '通用'
     },
     uncategorised: '未分类',
+    filterCategory: '分类',
+    sourceLabel: '来源',
+    sourceUser: '自己装的',
+    sourceBundled: '内置',
+    sourceAll: '全部',
     tier: { official: '官方', community: '社区', bundled: '内置', user: '用户' },
     translate: '译',
     translating: '译…',
@@ -227,6 +241,11 @@ const MESSAGES = {
       general: '通用'
     },
     uncategorised: '未分類',
+    filterCategory: '分類',
+    sourceLabel: '來源',
+    sourceUser: '自己裝的',
+    sourceBundled: '內建',
+    sourceAll: '全部',
     tier: { official: '官方', community: '社群', bundled: '內建', user: '使用者' },
     translate: '譯',
     translating: '譯…',
@@ -510,6 +529,7 @@ function CatalogPage() {
   const [target, setTarget] = useState(prefs.target)
   const [installedRows, setInstalledRows] = useState([])
   const [onlyInstalled, setOnlyInstalled] = useState(false)
+  const [sourceFilter, setSourceFilter] = useState('user')
   const [pendingRemove, setPendingRemove] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [selectMode, setSelectMode] = useState(false)
@@ -579,6 +599,32 @@ function CatalogPage() {
     return names
   }, [installedRows])
 
+  const installedByName = useMemo(() => {
+    const map = new Map()
+    for (const row of installedRows) {
+      if (row.name) map.set(row.name, row)
+      if (row.catalog_name) map.set(row.catalog_name, row)
+    }
+    return map
+  }, [installedRows])
+
+  /** Bundled defaults vs. what the user actually added. */
+  const installedCounts = useMemo(() => {
+    let bundled = 0
+    for (const row of installedRows) if (row.source === 'bundled') bundled += 1
+    return { bundled, user: installedRows.length - bundled, all: installedRows.length }
+  }, [installedRows])
+
+  const installedCount = installedCounts[sourceFilter] ?? installedCounts.all
+  const rowMatchesSource = useCallback(
+    row => {
+      if (sourceFilter === 'all') return true
+      const bundled = Boolean(row) && row.source === 'bundled'
+      return sourceFilter === 'bundled' ? bundled : !bundled
+    },
+    [sourceFilter]
+  )
+
   // Persist the user's choices.
   useEffect(() => {
     prefs = { sort, category, target }
@@ -598,6 +644,7 @@ function CatalogPage() {
   const localRows = useMemo(() => {
     if (!onlyInstalled) return []
     return installedRows
+      .filter(row => rowMatchesSource(row))
       .filter(row => !entries.some(e => e.name === row.name || e.name === row.catalog_name))
       .map(row => ({
         name: row.name,
@@ -606,14 +653,18 @@ function CatalogPage() {
         stars: 0,
         local: true
       }))
-  }, [onlyInstalled, installedRows, entries])
+  }, [onlyInstalled, installedRows, entries, rowMatchesSource])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const active = SORTS.find(s => s.id === sort) || SORTS[0]
     const base = entries
       .filter(entry => (category ? (entry.category || '') === category : true))
-      .filter(entry => (onlyInstalled ? installedNames.has(entry.name) : true))
+      .filter(entry =>
+        onlyInstalled
+          ? installedNames.has(entry.name) && rowMatchesSource(installedByName.get(entry.name))
+          : true
+      )
       .filter(entry => entryMatches(entry, needle, resolvedTarget))
       .sort((a, b) => active.cmp(a, b) || (b.stars || 0) - (a.stars || 0))
     const locals = localRows.filter(entry => entryMatches(entry, needle, resolvedTarget))
@@ -627,6 +678,8 @@ function CatalogPage() {
     resolvedTarget,
     onlyInstalled,
     installedNames,
+    installedByName,
+    rowMatchesSource,
     localRows,
     tick
   ])
@@ -911,33 +964,91 @@ function CatalogPage() {
         ]
       }),
 
-      // ── options: ranking + target language on one line ─────────────────────
+      // ── filters: four compact controls on one line ────────────────────────
       jsxs('div', {
-        className: 'flex flex-wrap items-center gap-x-5 gap-y-2 text-xs',
+        className: 'flex flex-wrap items-center gap-x-4 gap-y-2 text-xs',
         children: [
           jsxs('div', {
             className: 'flex items-center gap-2',
             children: [
               jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('rankBy') }),
-              ...SORTS.map(option =>
-                jsx(
-                  'button',
-                  {
-                    type: 'button',
-                    onClick: () => setSort(option.id),
-                    className: cn(
-                      'rounded px-2 py-0.5',
-                      option.id === sort
-                        ? 'bg-(--ui-bg-quaternary) font-medium'
-                        : 'text-(--ui-text-tertiary)'
-                    ),
-                    children: t(option.label)
-                  },
-                  option.id
+              jsx('select', {
+                value: sort,
+                onChange: event => setSort(event.target.value),
+                'aria-label': t('rankBy'),
+                className: SELECT_CLASS,
+                children: SORTS.map(option =>
+                  jsx('option', { value: option.id, children: t(option.label) }, option.id)
                 )
-              )
+              })
             ]
           }),
+          jsxs('div', {
+            className: 'flex items-center gap-2',
+            children: [
+              jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('filterCategory') }),
+              jsxs('select', {
+                value: category,
+                onChange: event => setCategory(event.target.value),
+                'aria-label': t('filterCategory'),
+                className: SELECT_CLASS,
+                children: [
+                  jsx('option', { value: '', children: t('all', entries.length) }, '__all'),
+                  ...categories.map(([slug, count]) =>
+                    jsx(
+                      'option',
+                      { value: slug, children: `${categoryLabel(t, slug)} ${count}` },
+                      slug || '__none'
+                    )
+                  )
+                ]
+              })
+            ]
+          }),
+          jsx('button', {
+            type: 'button',
+            onClick: () => setOnlyInstalled(value => !value),
+            'aria-pressed': onlyInstalled,
+            className: cn(
+              'rounded px-2 py-0.5',
+              onlyInstalled ? 'bg-(--ui-bg-quaternary) font-medium' : 'text-(--ui-text-tertiary)'
+            ),
+            children: t('onlyInstalled', onlyInstalled ? installedCount : installedCounts.user)
+          }),
+          onlyInstalled
+            ? jsxs('div', {
+                className: 'flex items-center gap-2',
+                children: [
+                  jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('sourceLabel') }),
+                  jsxs('select', {
+                    value: sourceFilter,
+                    onChange: event => setSourceFilter(event.target.value),
+                    'aria-label': t('sourceLabel'),
+                    className: SELECT_CLASS,
+                    children: [
+                      jsx(
+                        'option',
+                        { value: 'user', children: `${t('sourceUser')} ${installedCounts.user}` },
+                        'user'
+                      ),
+                      jsx(
+                        'option',
+                        {
+                          value: 'bundled',
+                          children: `${t('sourceBundled')} ${installedCounts.bundled}`
+                        },
+                        'bundled'
+                      ),
+                      jsx(
+                        'option',
+                        { value: 'all', children: `${t('sourceAll')} ${installedCounts.all}` },
+                        'all'
+                      )
+                    ]
+                  })
+                ]
+              })
+            : null,
           jsxs('div', {
             className: 'flex items-center gap-2',
             children: [
@@ -946,8 +1057,7 @@ function CatalogPage() {
                 value: target,
                 onChange: event => setTarget(event.target.value),
                 'aria-label': t('targetLang'),
-                className:
-                  'h-6 rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none',
+                className: SELECT_CLASS,
                 children: TARGETS.map(option =>
                   jsx(
                     'option',
@@ -958,51 +1068,6 @@ function CatalogPage() {
               })
             ]
           })
-        ]
-      }),
-
-      // ── categories: one scrollable line, never a ragged wrap ─────────────
-      jsxs('div', {
-        className: 'flex min-w-0 items-center gap-1 overflow-x-auto pb-1 text-xs',
-        children: [
-          jsx('button', {
-            type: 'button',
-            onClick: () => setOnlyInstalled(value => !value),
-            'aria-pressed': onlyInstalled,
-            className: cn(
-              'shrink-0 whitespace-nowrap rounded px-2 py-0.5',
-              onlyInstalled
-                ? 'bg-(--ui-bg-quaternary) font-medium'
-                : 'text-(--ui-text-tertiary)'
-            ),
-            children: t('onlyInstalled', installedRows.length)
-          }),
-          jsx('button', {
-            type: 'button',
-            onClick: () => setCategory(''),
-            className: cn(
-              'shrink-0 whitespace-nowrap rounded px-2 py-0.5',
-              category === '' ? 'bg-(--ui-bg-quaternary) font-medium' : 'text-(--ui-text-tertiary)'
-            ),
-            children: t('all', entries.length)
-          }),
-          ...categories.map(([slug, count]) =>
-            jsx(
-              'button',
-              {
-                type: 'button',
-                onClick: () => setCategory(slug === category ? '' : slug),
-                className: cn(
-                  'shrink-0 whitespace-nowrap rounded px-2 py-0.5',
-                  slug === category
-                    ? 'bg-(--ui-bg-quaternary) font-medium'
-                    : 'text-(--ui-text-tertiary)'
-                ),
-                children: `${categoryLabel(t, slug)} ${count}`
-              },
-              slug || 'none'
-            )
-          )
         ]
       }),
 
