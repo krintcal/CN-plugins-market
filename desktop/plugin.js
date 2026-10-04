@@ -91,6 +91,9 @@ const MESSAGES = {
     selectAll: n => `Select all ${n} shown`,
     clearSelection: 'Clear',
     selectOne: name => `Select ${name}`,
+    selectMode: 'Select',
+    exitSelectMode: 'Exit selection',
+    inFlight: name => `translating ${name}…`,
     stop: 'Stop',
     progress: (done, total) => `${done}/${total}…`,
     summary: (shown, done, left) =>
@@ -156,6 +159,9 @@ const MESSAGES = {
     selectAll: n => `全选当前 ${n} 条`,
     clearSelection: '清空',
     selectOne: name => `选中 ${name}`,
+    selectMode: '多选',
+    exitSelectMode: '退出多选',
+    inFlight: name => `正在翻 ${name}…`,
     stop: '停止',
     progress: (done, total) => `${done}/${total}…`,
     summary: (shown, done, left) =>
@@ -220,6 +226,9 @@ const MESSAGES = {
     selectAll: n => `全選目前 ${n} 條`,
     clearSelection: '清空',
     selectOne: name => `選取 ${name}`,
+    selectMode: '多選',
+    exitSelectMode: '退出多選',
+    inFlight: name => `正在翻 ${name}…`,
     stop: '停止',
     progress: (done, total) => `${done}/${total}…`,
     summary: (shown, done, left) =>
@@ -474,6 +483,7 @@ function CatalogPage() {
   const [target, setTarget] = useState(prefs.target)
   const [installed, setInstalled] = useState(new Set())
   const [selected, setSelected] = useState(() => new Set())
+  const [selectMode, setSelectMode] = useState(false)
   const [busyName, setBusyName] = useState('')
   const [bulk, setBulk] = useState(null)
   const [tick, setTick] = useState(0)
@@ -607,6 +617,13 @@ function CatalogPage() {
     setSelected(new Set())
   }, [])
 
+  /** Selection is a separate mode you step into, so the list stays clean otherwise. */
+  const toggleSelectMode = useCallback(() => {
+    haptic('tap')
+    setSelectMode(prev => !prev)
+    setSelected(new Set())
+  }, [])
+
   const translateEntry = useCallback(
     async entry => {
       const key = cacheKey(entry, resolvedTarget)
@@ -637,7 +654,7 @@ function CatalogPage() {
     async list => {
       const queue = list.filter(entry => !cache[cacheKey(entry, resolvedTarget)] && (entry.description || '').trim())
       if (!queue.length) return
-      const state = { done: 0, total: queue.length, stop: false }
+      const state = { done: 0, total: queue.length, stop: false, current: '' }
       bulkRef.current = state
       setBulk({ ...state })
       const sessionId =
@@ -646,6 +663,9 @@ function CatalogPage() {
       for (let start = 0; start < queue.length; start += BATCH_SIZE) {
         if (bulkRef.current && bulkRef.current.stop) break
         const chunk = queue.slice(start, start + BATCH_SIZE)
+        // Show what is being worked on BEFORE awaiting, so the bar never looks dead.
+        state.current = chunk[0] ? chunk[0].name : ''
+        setBulk({ ...state })
         let translations = null
         try {
           translations = await translateMany(
@@ -671,11 +691,15 @@ function CatalogPage() {
           }
         }
         state.done = Math.min(state.total, start + chunk.length)
+        state.current = ''
         setBulk({ ...state })
         setTick(v => v + 1)
       }
       bulkRef.current = null
       setBulk(null)
+      // A finished batch is a finished job: drop the selection so the next
+      // glance at the list isn't cluttered with ticks.
+      setSelected(new Set())
     },
     [batchInstructions, resolvedTarget, t]
   )
@@ -757,6 +781,14 @@ function CatalogPage() {
               children: '⟳'
             })
           }),
+          jsx(Button, {
+            size: 'sm',
+            variant: selectMode ? 'secondary' : 'ghost',
+            type: 'button',
+            disabled: Boolean(bulk),
+            onClick: toggleSelectMode,
+            children: selectMode ? t('exitSelectMode') : t('selectMode')
+          }),
           jsx(Tip, {
             label: t('translateMissing', pending.length),
             children: jsx(Button, {
@@ -766,10 +798,19 @@ function CatalogPage() {
               disabled: !gateway || !pending.length || Boolean(bulk),
               onClick: translateMissing,
               children: bulk
-                ? t('progress', bulk.done, bulk.total)
+                ? jsxs('span', {
+                    className: 'inline-flex items-center gap-1.5',
+                    children: [jsx(GlyphSpinner, {}), t('progress', bulk.done, bulk.total)]
+                  })
                 : t('translateMissing', pending.length)
             })
           }),
+          bulk && bulk.current
+            ? jsx('span', {
+                className: 'text-xs text-(--ui-text-tertiary)',
+                children: t('inFlight', bulk.current)
+              })
+            : null,
           bulk
             ? jsx(Button, {
                 size: 'sm',
@@ -862,8 +903,8 @@ function CatalogPage() {
         ]
       }),
 
-      // ── selection ─────────────────────────────────────────────────────────
-      status === 'ready'
+      // ── selection (only in selection mode) ───────────────────────────────
+      selectMode && status === 'ready'
         ? jsxs('div', {
             className: 'flex flex-wrap items-center gap-2 text-xs',
             children: [
@@ -947,13 +988,15 @@ function CatalogPage() {
                         jsxs('div', {
                           className: 'flex flex-wrap items-center gap-2',
                           children: [
-                            jsx('input', {
-                              type: 'checkbox',
-                              checked: isSelected,
-                              onChange: () => toggleSelected(entry.name),
-                              'aria-label': t('selectOne', entry.name),
-                              className: 'h-3.5 w-3.5 shrink-0 cursor-pointer'
-                            }),
+                            selectMode
+                              ? jsx('input', {
+                                  type: 'checkbox',
+                                  checked: isSelected,
+                                  onChange: () => toggleSelected(entry.name),
+                                  'aria-label': t('selectOne', entry.name),
+                                  className: 'h-3.5 w-3.5 shrink-0 cursor-pointer'
+                                })
+                              : null,
                             jsx('span', {
                               className: cn(
                                 'inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-xs',

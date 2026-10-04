@@ -11,7 +11,8 @@ The curated catalog is written in English. This plugin adds a catalog page to He
 - **A real ranking.** Sort the catalog by **most starred**, **recently updated**, **newly listed**, or **most capable** (tools + hooks), with the rank number on every card. Category chips and a search box that also matches the translation once you have one.
 - **One-click install.** Same backend path as the built-in catalog page (`plugins.manage`), so installed state stays in sync across the app.
 - **Translate on demand, or in bulk.** `Translate` on a single card, or `Translate N untranslated` to walk the current filter, with progress and a stop button. Bulk runs send **8 entries per model call**, so a 400-entry catalog is minutes, not hours.
-- **Pick exactly what you want.** Every card has a checkbox; `Select all N shown` respects the current filter. `Translate N selected` then translates only those.
+- **Pick exactly what you want.** `Select` puts the list into selection mode: every card grows a checkbox, `Select all N shown` respects the current filter, and `Translate N selected` translates only those. The ticks clear themselves when the run finishes.
+- **Live progress.** The bulk button carries a spinner, `done/total`, and the name of the plugin being translated right now, so a long run never looks frozen.
 - **Cached per language, forever.** Translations are keyed by `<plugin>@<pinned sha>#<language>`, so switching the target language never shows you the previous language's text, and a plugin that updates comes back untranslated rather than showing a stale blurb. Everything else stays free.
 - **Target language is yours.** Follows the app language by default (zh → 简体中文, zh-hant → 繁體中文, ja → 日本語, …), or pick from the list.
 - **Click the name** to open the plugin's repository in your browser.
@@ -21,7 +22,8 @@ The curated catalog is written in English. This plugin adds a catalog page to He
 - **真的排行**：按**最受欢迎 / 最近更新 / 新上榜 / 功能最多**（工具＋钩子）排序，每张卡带名次；分类芯片 + 搜索框（翻过的还会连同中文一起搜）。
 - **一键安装**：走和官方目录页同一个后端接口（`plugins.manage`），安装状态全 App 同步。
 - **单条翻，也能批量翻**：单卡一个「译」；顶上「翻译未翻译的 N 条」按当前筛选往下推，带进度和停止按钮。批量是**一次调用翻译 8 条**，400 条是几分钟的量级。
-- **想翻哪几条自己勾**：每张卡左边有勾选框；「全选当前 N 条」会跟随当前筛选。然后「翻译选中的 N 条」只翻这几条。
+- **想翻哪几条自己勾**：点「多选」进入选择模式，每张卡左边才出现勾选框；「全选当前 N 条」会跟随当前筛选；「翻译选中的 N 条」只翻这几条。**翻译跑完勾选会自动清空**，不用手动收拾。
+- **进度是活的**：批量翻译时按钮上带转轮和 `已完成/总数`，右侧还会显示**正在翻哪一个插件**，跑久了也不会像卡死。
 - **译文按语言分别缓存**：key 是 `<插件>@<pin 的 commit>#<语言>`，所以**切换目标语言不会拿旧语言的译文糊弄你**；插件更新了旧译文也会自动作废。其余永远免二次开销。
 - **目标语言自选**：默认跟随界面语言（zh → 简体中文，zh-hant → 繁體中文，ja → 日本語……），也可手动指定。
 - **点插件名**直接在浏览器里打开它的源码仓库。
