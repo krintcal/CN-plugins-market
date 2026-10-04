@@ -65,19 +65,13 @@ const MESSAGES = {
     category: {
       desktop: 'Desktop',
       memory: 'Memory',
-      platforms: 'Platforms',
+      platform: 'Platforms',
       web: 'Web & browsers',
       tools: 'Tools',
       voice: 'Voice',
       automation: 'Automation',
       models: 'Models',
-      general: 'General',
-      mcp: 'MCP',
-      media: 'Media',
-      security: 'Security',
-      observability: 'Observability',
-      productivity: 'Productivity',
-      integrations: 'Integrations'
+      general: 'General'
     },
     uncategorised: 'Uncategorised',
     tier: { official: 'official', community: 'community', bundled: 'bundled', user: 'user' },
@@ -129,19 +123,13 @@ const MESSAGES = {
     category: {
       desktop: '桌面',
       memory: '记忆',
-      platforms: '平台',
+      platform: '平台',
       web: '网页与浏览器',
       tools: '工具',
       voice: '语音',
       automation: '自动化',
       models: '模型',
-      general: '通用',
-      mcp: 'MCP',
-      media: '媒体',
-      security: '安全',
-      observability: '可观测性',
-      productivity: '效率',
-      integrations: '集成'
+      general: '通用'
     },
     uncategorised: '未分类',
     tier: { official: '官方', community: '社区', bundled: '内置', user: '用户' },
@@ -190,6 +178,17 @@ const MESSAGES = {
     sortAdded: '新上榜',
     sortTools: '功能最多',
     all: n => `全部 ${n}`,
+    category: {
+      desktop: '桌面',
+      memory: '記憶',
+      platform: '平台',
+      web: '網頁與瀏覽器',
+      tools: '工具',
+      voice: '語音',
+      automation: '自動化',
+      models: '模型',
+      general: '通用'
+    },
     uncategorised: '未分類',
     tier: { official: '官方', community: '社群', bundled: '內建', user: '使用者' },
     translate: '譯',
@@ -339,6 +338,14 @@ const SORTS = [
   },
   { id: 'tools', label: 'sortTools', cmp: (a, b) => toolsOf(b) - toolsOf(a) }
 ]
+
+/** Category label that never leaks a raw i18n key for an unmapped slug. */
+function categoryLabel(t, slug) {
+  if (!slug) return t('uncategorised')
+  const key = `category.${slug}`
+  const label = t(key)
+  return label === key ? slug : label
+}
 
 function openExternal(url) {
   if (!url) return
@@ -699,7 +706,7 @@ function CatalogPage() {
                     ? 'bg-(--ui-bg-quaternary) font-medium'
                     : 'text-(--ui-text-tertiary)'
                 ),
-                children: `${slug ? t(`category.${slug}`) : t('uncategorised')} ${count}`
+                children: `${categoryLabel(t, slug)} ${count}`
               },
               slug || 'none'
             )
@@ -770,9 +777,7 @@ function CatalogPage() {
                             }),
                             jsx('span', {
                               className: 'text-xs text-(--ui-text-tertiary)',
-                              children: entry.category
-                                ? t(`category.${entry.category}`)
-                                : t('uncategorised')
+                              children: categoryLabel(t, entry.category)
                             }),
                             entry.stars
                               ? jsx('span', {
