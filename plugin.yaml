@@ -8,6 +8,8 @@ description: >-
   you pick — each blurb translated once and cached, so repeat browsing costs
   nothing. Read-only against the public catalog; the only model call is an
   explicit per-entry translation on whatever provider you already have active.
+  在 Hermes 桌面端用中文浏览并翻译官方插件目录：四档排行、一键安装，每条简介
+  翻译一次即永久缓存，之后浏览不再花钱；只读目录，唯一会调模型的动作是你手动点的翻译。
 author: krintcal
 kind: standalone
 platforms:

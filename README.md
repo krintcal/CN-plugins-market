@@ -4,18 +4,27 @@ Browse the [Hermes](https://hermes-agent.nousresearch.com) plugin catalog **insi
 
 The curated catalog is written in English. This plugin adds a catalog page to Hermes Desktop that ranks it, installs from it, and — the point of the whole thing — **translates each plugin's blurb into the language you choose**, caching the translation so you only ever pay for it once.
 
-> 官方插件目录是英文的。这个插件在 Hermes 桌面端里加一页「插件目录」：可排行、可一键安装，并把每个插件的简介**翻成你选的语言**——译文按插件缓存，翻过一次就永久复用。
+> 官方插件目录是英文的。这个插件在 Hermes 桌面端里加一页「插件目录」：四档排行、一键安装，并把每个插件的简介**翻成你选的语言**（主要服务中文用户）——译文按插件缓存，翻过一次就永久复用。
 
-## Features / 功能
+## Features
 
-- **A real ranking.** Sort the catalog by **most starred**, **recently updated**, **newly listed**, or **most capable** (tools + hooks), with the rank number on every card. Category chips and a search box (searches the translation too, once you have one).
+- **A real ranking.** Sort the catalog by **most starred**, **recently updated**, **newly listed**, or **most capable** (tools + hooks), with the rank number on every card. Category chips and a search box that also matches the translation once you have one.
 - **One-click install.** Same backend path as the built-in catalog page (`plugins.manage`), so installed state stays in sync across the app.
-- **Translate on demand, or in bulk.** `Translate` on a single card, or `Translate N untranslated` to walk the current filter. Progress with a stop button.
+- **Translate on demand, or in bulk.** `Translate` on a single card, or `Translate N untranslated` to walk the current filter, with progress and a stop button.
 - **Cached forever.** Translations are keyed by `<plugin>@<pinned sha>`, so a plugin that updates comes back untranslated rather than showing you a stale blurb — and everything else stays free.
-- **Target language is yours.** Follows the app language by default (zh → 简体中文, zh-hant → 繁體中文, ja → 日本語, …), or pick from the list. UI strings ship in English, 简体中文 and 繁體中文 via the plugin SDK's own i18n bundles.
+- **Target language is yours.** Follows the app language by default (zh → 简体中文, zh-hant → 繁體中文, ja → 日本語, …), or pick from the list.
 - **Click the name** to open the plugin's repository in your browser.
 
-## Install / 安装
+## 功能
+
+- **真的排行**：按**最受欢迎 / 最近更新 / 新上榜 / 功能最多**（工具＋钩子）排序，每张卡带名次；分类芯片 + 搜索框（翻过的还会连同中文一起搜）。
+- **一键安装**：走和官方目录页同一个后端接口（`plugins.manage`），安装状态全 App 同步。
+- **单条翻，也能批量翻**：单卡一个「译」；顶上「翻译未翻译的 N 条」按当前筛选往下推，带进度和停止按钮。
+- **缓存永久有效**：译文按 `<插件>@<pin 的 commit>` 存，插件更新了旧译文自动作废（不会拿旧翻译糊弄你），其余永远免二次开销。
+- **目标语言自选**：默认跟随界面语言（zh → 简体中文，zh-hant → 繁體中文，ja → 日本語……），也可手动指定。
+- **点插件名**直接在浏览器里打开它的源码仓库。
+
+## Install
 
 From the Hermes plugin catalog:
 
@@ -29,23 +38,41 @@ or manually:
 git clone https://github.com/krintcal/CN-plugins-market.git ~/.hermes/desktop-plugins/cn-plugins-market
 ```
 
-Then, in the Desktop app: **⌘K → Reload desktop plugins**. The page appears in the sidebar as **Plugin catalog**.
+Then, in the Desktop app: **⌘K → Reload desktop plugins**. The page appears in the sidebar as **Plugin catalog** (中文界面下显示为「插件目录」).
+
+## 安装
+
+```bash
+hermes plugins install cn-plugins-market --enable
+```
+
+装完在桌面端按 **⌘K → Reload desktop plugins**，左侧导航就会出现「插件目录」。
 
 ## Screenshots
 
-Add `screenshots/*.png` here; they are rendered as the gallery on the plugin's catalog page.
+`screenshots/01-catalog-zh.png` — the catalog page in Chinese. The folder feeds the gallery on the plugin's catalog page.
+
+## 截图
+
+`screenshots/01-catalog-zh.png`：插件目录页（中文界面）。
 
 ## How it works
 
 - Desktop-only plugin: a single ESM file, `desktop/plugin.js`, using nothing but the public plugin SDK (`@hermes/plugin-sdk`) — it registers one full page (`ROUTES_AREA`) and one sidebar row (`SIDEBAR_NAV_AREA`).
 - The catalog is fetched from the same public URL the app itself uses (`plugins.json`), with HTTP caching disabled so re-opening the page always shows the current listing.
-- Everything else — ranking, search, filters, the translation cache, your last-used sort/language — is computed and stored locally (`ctx.storage`).
+- Ranking, search, filters, the translation cache and your last-used sort/language are computed and stored locally (`ctx.storage`).
 
 ## Cost & privacy
 
-- Browsing, ranking, searching and installing are **free**, and read no credentials.
+- Browsing, ranking, searching and installing are **free** and read no credentials.
 - The only model call is an explicit translation, one plugin per call, through the gateway's `llm.oneshot` on **whatever provider and model you already have active** — no separate key, no separate bill. Bulk-translating a 400-entry catalog is a fraction of a cent on a cheap model; after that it is cached and free.
-- Nothing leaves your machine except the catalog fetch (the same public URL the app fetches) and your own translation calls to your own provider. No telemetry, no self-updater.
+- Nothing leaves your machine except the catalog fetch (the same public URL the app fetches) and your own translation calls to your own provider. No telemetry, no self-updater. Opening a repository happens only when you click a plugin name.
+
+## 成本与隐私
+
+- 浏览、排行、搜索、安装**全部免费**，不碰任何凭证。
+- 唯一会调模型的动作是「翻译」，一次一条，走网关的 `llm.oneshot`，用的是**你当前已经在用的 provider 和模型**——不用另配密钥，也不会多出一份账单。400 条全翻一遍，在便宜模型上是几毛钱量级；翻完进缓存，之后永久免费。
+- 除了抓取那份公开目录（App 自己也在抓的同一个 URL）和你自己发出的翻译请求，什么都不会离开这台机器。没有遥测，没有自更新；打开仓库只在你点插件名时发生。
 
 ## Requirements
 
