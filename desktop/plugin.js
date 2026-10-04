@@ -116,7 +116,9 @@ const MESSAGES = {
     disabledOk: name => `${name} disabled.`,
     toggleFailed: message => `Could not change the state: ${message}`,
     toggleUnsupported: name => `${name} has no toggle key on this backend.`,
-    desktopHalfHint: 'Its desktop half is opened separately in Settings → Plugins.',
+    desktopHalfHint:
+      "Desktop halves are toggled in the app's own Plugins tab — a plugin can only take you there.",
+    desktopHalfAction: 'Open its desktop half',
     onlyInstalled: n => `Installed only (${n})`,
     uninstall: 'Uninstall',
     uninstallTitle: name => `Uninstall ${name}?`,
@@ -203,7 +205,8 @@ const MESSAGES = {
     disabledOk: name => `${name} 已停用`,
     toggleFailed: message => `改不动状态：${message}`,
     toggleUnsupported: name => `${name} 在这个后端上没有可切换的 key。`,
-    desktopHalfHint: '它的桌面半边要在「设置 → 插件」里单独打开。',
+    desktopHalfHint: '桌面半边由 App 自己管，插件只能带你过去 —— 到「技能与工具 → 插件」里开关。',
+    desktopHalfAction: '去开桌面半边',
     onlyInstalled: n => `只看已安装 ${n}`,
     uninstall: '卸载',
     uninstallTitle: name => `卸载 ${name}？`,
@@ -288,7 +291,8 @@ const MESSAGES = {
     disabledOk: name => `${name} 已停用`,
     toggleFailed: message => `改不動狀態：${message}`,
     toggleUnsupported: name => `${name} 在這個後端上沒有可切換的 key。`,
-    desktopHalfHint: '它的桌面半邊要在「設定 → 外掛」裡單獨打開。',
+    desktopHalfHint: '桌面半邊由 App 自己管，外掛只能帶你過去 —— 到「技能與工具 → 外掛」裡開關。',
+    desktopHalfAction: '去開桌面半邊',
     onlyInstalled: n => `只看已安裝 ${n}`,
     uninstall: '卸載',
     uninstallTitle: name => `卸載 ${name}？`,
@@ -1337,8 +1341,26 @@ function CatalogPage() {
                         }),
                         row && row.has_desktop_half
                           ? jsx('div', {
-                              className: 'mt-1 text-xs text-(--ui-text-tertiary)',
-                              children: t('desktopHalfHint')
+                              className: 'mt-1.5',
+                              children: jsx(Tip, {
+                                label: t('desktopHalfHint'),
+                                children: jsx(Button, {
+                                  size: 'xs',
+                                  variant: 'outline',
+                                  type: 'button',
+                                  onClick: () => {
+                                    try {
+                                      host.navigate('/capabilities?tab=plugins')
+                                    } catch (e) {
+                                      host.notify({
+                                        kind: 'error',
+                                        message: t('toggleFailed', (e && e.message) || e)
+                                      })
+                                    }
+                                  },
+                                  children: t('desktopHalfAction')
+                                })
+                              })
                             })
                           : null
                       ]
