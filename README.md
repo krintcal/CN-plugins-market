@@ -48,13 +48,12 @@ hermes plugins install cn-plugins-market --enable
 
 装完在桌面端按 **⌘K → Reload desktop plugins**，左侧导航就会出现「插件目录」。
 
-## Screenshots
+## Screenshots / 截图
 
-`screenshots/01-catalog-zh.png` — the catalog page in Chinese. The folder feeds the gallery on the plugin's catalog page.
+![The plugin catalog page in Chinese — four ranking modes, category filters, one-click install, and translated blurbs](screenshots/01-catalog-zh.png)
 
-## 截图
-
-`screenshots/01-catalog-zh.png`：插件目录页（中文界面）。
+The `screenshots/` folder also fills the gallery on the plugin's catalog page.
+`screenshots/` 目录同时会作为插件在官方目录页的图集。
 
 ## How it works
 
