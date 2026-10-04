@@ -26,6 +26,7 @@ import {
   ROUTES_AREA,
   ScrollArea,
   SIDEBAR_NAV_AREA,
+  Switch,
   Tip,
   useI18n,
   usePluginI18n,
@@ -108,6 +109,14 @@ const MESSAGES = {
       `${shown} shown · ${done} translated${left ? ` · ${left} left` : ''} · fetched ${when}`,
     install: 'Install',
     installed: 'Installed',
+    enableTip: 'Enable',
+    disableTip: 'Disable',
+    toggleAria: name => `Enable or disable ${name}`,
+    enabledOk: name => `${name} enabled.`,
+    disabledOk: name => `${name} disabled.`,
+    toggleFailed: message => `Could not change the state: ${message}`,
+    toggleUnsupported: name => `${name} has no toggle key on this backend.`,
+    desktopHalfHint: 'Its desktop half is opened separately in Settings → Plugins.',
     onlyInstalled: n => `Installed only (${n})`,
     uninstall: 'Uninstall',
     uninstallTitle: name => `Uninstall ${name}?`,
@@ -187,6 +196,14 @@ const MESSAGES = {
       `当前 ${shown} 条 · 已翻译 ${done} 条${left ? ` · 待翻 ${left} 条` : ''} · 拉取于${when}`,
     install: '安装',
     installed: '已安装',
+    enableTip: '启用',
+    disableTip: '停用',
+    toggleAria: name => `启用或停用 ${name}`,
+    enabledOk: name => `${name} 已启用`,
+    disabledOk: name => `${name} 已停用`,
+    toggleFailed: message => `改不动状态：${message}`,
+    toggleUnsupported: name => `${name} 在这个后端上没有可切换的 key。`,
+    desktopHalfHint: '它的桌面半边要在「设置 → 插件」里单独打开。',
     onlyInstalled: n => `只看已安装 ${n}`,
     uninstall: '卸载',
     uninstallTitle: name => `卸载 ${name}？`,
@@ -264,6 +281,14 @@ const MESSAGES = {
       `目前 ${shown} 條 · 已翻譯 ${done} 條${left ? ` · 待翻譯 ${left} 條` : ''} · 擷取於${when}`,
     install: '安裝',
     installed: '已安裝',
+    enableTip: '啟用',
+    disableTip: '停用',
+    toggleAria: name => `啟用或停用 ${name}`,
+    enabledOk: name => `${name} 已啟用`,
+    disabledOk: name => `${name} 已停用`,
+    toggleFailed: message => `改不動狀態：${message}`,
+    toggleUnsupported: name => `${name} 在這個後端上沒有可切換的 key。`,
+    desktopHalfHint: '它的桌面半邊要在「設定 → 外掛」裡單獨打開。',
     onlyInstalled: n => `只看已安裝 ${n}`,
     uninstall: '卸載',
     uninstallTitle: name => `卸載 ${name}？`,
@@ -849,6 +874,38 @@ function CatalogPage() {
     [refreshInstalled, t]
   )
 
+  /** The same enable/disable switch the built-in Plugins tab drives. */
+  const toggleEntry = useCallback(
+    async (entry, enable) => {
+      const row = installedByName.get(entry.name)
+      if (!row || !row.key) {
+        host.notify({ kind: 'error', message: t('toggleUnsupported', entry.name) })
+        return
+      }
+      setBusyName(entry.name)
+      try {
+        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
+        const res = await host.request(
+          'plugins.manage',
+          { action: 'toggle', key: row.key, enable, ...(profile ? { profile } : {}) },
+          120000
+        )
+        if (!res || !res.ok) throw new Error((res && res.error) || 'toggle rejected')
+        host.notify({
+          kind: 'success',
+          message: enable ? t('enabledOk', entry.name) : t('disabledOk', entry.name)
+        })
+        await refreshInstalled()
+        setTick(v => v + 1)
+      } catch (e) {
+        host.notify({ kind: 'error', message: t('toggleFailed', (e && e.message) || e) })
+      } finally {
+        setBusyName('')
+      }
+    },
+    [installedByName, refreshInstalled, t]
+  )
+
   /** ConfirmDialog's onConfirm: throw to keep the dialog open with the error. */
   const doUninstall = useCallback(async () => {
     const target = pendingRemove
@@ -1135,6 +1192,8 @@ function CatalogPage() {
                   const key = cacheKey(entry, resolvedTarget)
                   const blurb = cache[key]
                   const isInstalled = installedNames.has(entry.name)
+                  const row = installedByName.get(entry.name)
+                  const rowEnabled = Boolean(row) && row.status === 'enabled'
                   const isSelected = selected.has(entry.name)
                   const busy = busyName === entry.name
                   const toolCount = toolsOf(entry)
@@ -1235,12 +1294,23 @@ function CatalogPage() {
                                 }),
                             isInstalled
                               ? jsxs('span', {
-                                  className: 'inline-flex items-center gap-1.5',
+                                  className: 'inline-flex items-center gap-2',
                                   children: [
                                     jsx('span', {
                                       className: 'text-xs text-(--ui-text-tertiary)',
                                       children: t('installed')
                                     }),
+                                    row && row.key
+                                      ? jsx(Tip, {
+                                          label: rowEnabled ? t('disableTip') : t('enableTip'),
+                                          children: jsx(Switch, {
+                                            checked: rowEnabled,
+                                            disabled: busy,
+                                            'aria-label': t('toggleAria', entry.name),
+                                            onCheckedChange: next => toggleEntry(entry, next)
+                                          })
+                                        })
+                                      : null,
                                     jsx(Button, {
                                       size: 'xs',
                                       variant: 'ghost',
@@ -1264,7 +1334,13 @@ function CatalogPage() {
                         jsx('div', {
                           className: 'mt-1 text-sm leading-relaxed',
                           children: blurb || entry.description || ''
-                        })
+                        }),
+                        row && row.has_desktop_half
+                          ? jsx('div', {
+                              className: 'mt-1 text-xs text-(--ui-text-tertiary)',
+                              children: t('desktopHalfHint')
+                            })
+                          : null
                       ]
                     },
                     key
