@@ -1,0 +1,20 @@
+name: cn-plugins-market
+version: "1.0.0"
+description: >-
+  Browse the Hermes plugin catalog inside the Desktop app, in your own
+  language. Adds a catalog page that ranks the curated catalog four ways
+  (most starred / recently updated / newly listed / most capable), installs a
+  plugin with one click, and translates any plugin's blurb into the language
+  you pick — each blurb translated once and cached, so repeat browsing costs
+  nothing. Read-only against the public catalog; the only model call is an
+  explicit per-entry translation on whatever provider you already have active.
+author: krintcal
+kind: standalone
+platforms:
+  - linux
+  - macos
+  - windows
+requires_hermes: ">=0.21.5"
+provides_tools: []
+provides_hooks: []
+requires_env: []
