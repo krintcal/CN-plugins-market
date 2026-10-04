@@ -91,7 +91,9 @@ const MESSAGES = {
     sourceUser: 'Mine',
     sourceBundled: 'Built-in',
     sourceAll: 'Everything',
-    tier: { official: 'official', community: 'community', bundled: 'bundled', user: 'user' },
+    tier: { official: 'official', community: 'community', bundled: 'bundled', user: 'user', desktop: 'desktop half' },
+    installedDesktopOnly: 'Desktop half installed',
+    installAgentHalf: 'Add its agent half',
     translate: 'Translate',
     translating: 'Translating…',
     translateMissing: n => `Translate ${n} untranslated`,
@@ -180,7 +182,9 @@ const MESSAGES = {
     sourceUser: '自己装的',
     sourceBundled: '内置',
     sourceAll: '全部',
-    tier: { official: '官方', community: '社区', bundled: '内置', user: '用户' },
+    tier: { official: '官方', community: '社区', bundled: '内置', user: '用户', desktop: '桌面半边' },
+    installedDesktopOnly: '桌面半边已装',
+    installAgentHalf: '装 agent 半边',
     translate: '译',
     translating: '译…',
     translateMissing: n => `翻译未翻译的 ${n} 条`,
@@ -266,7 +270,9 @@ const MESSAGES = {
     sourceUser: '自己裝的',
     sourceBundled: '內建',
     sourceAll: '全部',
-    tier: { official: '官方', community: '社群', bundled: '內建', user: '使用者' },
+    tier: { official: '官方', community: '社群', bundled: '內建', user: '使用者', desktop: '桌面半邊' },
+    installedDesktopOnly: '桌面半邊已裝',
+    installAgentHalf: '裝 agent 半邊',
     translate: '譯',
     translating: '譯…',
     translateMissing: n => `翻譯未翻譯的 ${n} 條`,
@@ -557,6 +563,8 @@ function CatalogPage() {
   const [category, setCategory] = useState(prefs.category)
   const [target, setTarget] = useState(prefs.target)
   const [installedRows, setInstalledRows] = useState([])
+  /** Desktop halves on disk (`<plugins root>/<name>`) — invisible to the agent list. */
+  const [desktopHalves, setDesktopHalves] = useState(() => new Set())
   const [onlyInstalled, setOnlyInstalled] = useState(false)
   const [sourceFilter, setSourceFilter] = useState('user')
   const [pendingRemove, setPendingRemove] = useState(null)
@@ -601,6 +609,28 @@ function CatalogPage() {
     void loadCatalog()
   }, [loadCatalog])
 
+  /**
+   * The app's own plugin folder. A package can ship a desktop half with no agent
+   * half at all — then `plugins.manage list` (an agent-side view) reports nothing
+   * for it and the card wrongly claimed it was not installed. This is the same
+   * read the built-in Plugins tab uses to place that half.
+   */
+  const refreshDesktopHalves = useCallback(async () => {
+    try {
+      const bridge = typeof window !== 'undefined' ? window.hermesDesktop : undefined
+      if (!bridge || typeof bridge.desktopPluginsRoot !== 'function') return
+      const root = await bridge.desktopPluginsRoot()
+      if (!root) return
+      const res = await bridge.readDir(root)
+      const dirs = (res && res.entries ? res.entries : [])
+        .filter(entry => entry.isDirectory)
+        .map(entry => entry.name)
+      setDesktopHalves(new Set(dirs))
+    } catch {
+      /* no bridge or an unreadable folder: cards keep the agent-side answer */
+    }
+  }, [])
+
   const refreshInstalled = useCallback(async () => {
     try {
       const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
@@ -612,7 +642,8 @@ function CatalogPage() {
     } catch {
       /* an unavailable list just leaves every card showing Install */
     }
-  }, [])
+    await refreshDesktopHalves()
+  }, [refreshDesktopHalves])
 
   useEffect(() => {
     void refreshInstalled()
@@ -644,7 +675,16 @@ function CatalogPage() {
     return { bundled, user: installedRows.length - bundled, all: installedRows.length }
   }, [installedRows])
 
-  const installedCount = installedCounts[sourceFilter] ?? installedCounts.all
+  /** Desktop-only installs the agent list can't see — they count as installed too. */
+  const desktopOnlyCount = useMemo(() => {
+    let extra = 0
+    for (const name of desktopHalves) if (!installedNames.has(name)) extra += 1
+    return extra
+  }, [desktopHalves, installedNames])
+
+  const installedCount =
+    (installedCounts[sourceFilter] ?? installedCounts.all) +
+    (sourceFilter === 'bundled' ? 0 : desktopOnlyCount)
   const rowMatchesSource = useCallback(
     row => {
       if (sourceFilter === 'all') return true
@@ -669,10 +709,10 @@ function CatalogPage() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1])
   }, [entries])
 
-  /** Installed plugins the catalog doesn't list at all (Git installs, bundled). */
+  /** Installed plugins the catalog doesn't list (Git installs, bundled, desktop-only). */
   const localRows = useMemo(() => {
     if (!onlyInstalled) return []
-    return installedRows
+    const rows = installedRows
       .filter(row => rowMatchesSource(row))
       .filter(row => !entries.some(e => e.name === row.name || e.name === row.catalog_name))
       .map(row => ({
@@ -682,7 +722,25 @@ function CatalogPage() {
         stars: 0,
         local: true
       }))
-  }, [onlyInstalled, installedRows, entries, rowMatchesSource])
+    // A desktop half with no agent half and no catalog entry of its own.
+    if (sourceFilter !== 'bundled') {
+      const seen = new Set(rows.map(row => row.name))
+      for (const name of desktopHalves) {
+        if (seen.has(name) || installedNames.has(name)) continue
+        if (entries.some(entry => entry.name === name)) continue
+        rows.push({ name, description: '', tier: 'desktop', stars: 0, local: true })
+      }
+    }
+    return rows
+  }, [
+    onlyInstalled,
+    installedRows,
+    entries,
+    rowMatchesSource,
+    desktopHalves,
+    installedNames,
+    sourceFilter
+  ])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -691,7 +749,8 @@ function CatalogPage() {
       .filter(entry => (category ? (entry.category || '') === category : true))
       .filter(entry =>
         onlyInstalled
-          ? installedNames.has(entry.name) && rowMatchesSource(installedByName.get(entry.name))
+          ? (Boolean(installedByName.get(entry.name)) || desktopHalves.has(entry.name)) &&
+            rowMatchesSource(installedByName.get(entry.name))
           : true
       )
       .filter(entry => entryMatches(entry, needle, resolvedTarget))
@@ -708,6 +767,7 @@ function CatalogPage() {
     onlyInstalled,
     installedNames,
     installedByName,
+    desktopHalves,
     rowMatchesSource,
     localRows,
     tick
@@ -1245,9 +1305,14 @@ function CatalogPage() {
                 children: filtered.map((entry, rank) => {
                   const key = cacheKey(entry, resolvedTarget)
                   const blurb = cache[key]
-                  const isInstalled = installedNames.has(entry.name)
                   const row = installedByName.get(entry.name)
+                  const hasDesktopHalf = desktopHalves.has(entry.name)
+                  const isInstalled = Boolean(row) || hasDesktopHalf
                   const rowEnabled = Boolean(row) && row.status === 'enabled'
+                  // The desktop half's switch belongs to the app; we can only
+                  // take the user to it (see `desktopHalfHint`).
+                  const showsDesktopHalf =
+                    Boolean(row && row.has_desktop_half) || (!row && hasDesktopHalf)
                   const isSelected = selected.has(entry.name)
                   const busy = busyName === entry.name
                   const toolCount = toolsOf(entry)
@@ -1352,7 +1417,7 @@ function CatalogPage() {
                                   children: [
                                     jsx('span', {
                                       className: 'text-xs text-(--ui-text-tertiary)',
-                                      children: t('installed')
+                                      children: row ? t('installed') : t('installedDesktopOnly')
                                     }),
                                     row && row.key
                                       ? jsx(Tip, {
@@ -1363,6 +1428,15 @@ function CatalogPage() {
                                             'aria-label': t('toggleAria', entry.name),
                                             onCheckedChange: next => toggleEntry(entry, next)
                                           })
+                                        })
+                                      : null,
+                                    !row && !busy
+                                      ? jsx(Button, {
+                                          size: 'xs',
+                                          variant: 'outline',
+                                          type: 'button',
+                                          onClick: () => installEntry(entry),
+                                          children: t('installAgentHalf')
                                         })
                                       : null,
                                     jsx(Button, {
@@ -1389,7 +1463,7 @@ function CatalogPage() {
                           className: 'mt-1 text-sm leading-relaxed',
                           children: blurb || entry.description || ''
                         }),
-                        row && row.has_desktop_half
+                        showsDesktopHalf
                           ? jsx('div', {
                               className: 'mt-1.5',
                               children: jsx(Tip, {
