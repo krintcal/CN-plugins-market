@@ -19,6 +19,7 @@
 import {
   Button,
   cn,
+  ConfirmDialog,
   GlyphSpinner,
   haptic,
   host,
@@ -60,8 +61,6 @@ const MESSAGES = {
     title: 'Plugin catalog',
     loading: 'Loading the catalog…',
     loadFailed: message => `Could not load the catalog: ${message}`,
-    count: n => `${n} plugins`,
-    fetched: when => `fetched ${when}`,
     search: 'Search plugins',
     refresh: 'Refresh the catalog',
     rankBy: 'Rank by',
@@ -100,6 +99,14 @@ const MESSAGES = {
       `${shown} shown · ${done} translated${left ? ` · ${left} left` : ''} · fetched ${when}`,
     install: 'Install',
     installed: 'Installed',
+    onlyInstalled: n => `Installed only (${n})`,
+    uninstall: 'Uninstall',
+    uninstallTitle: name => `Uninstall ${name}?`,
+    uninstallBody: name =>
+      `This deletes ${name}'s files from the current profile. It can be reinstalled from the catalog or from Git at any time.`,
+    uninstalled: name => `${name} uninstalled.`,
+    uninstallFailed: message => `Uninstall failed: ${message}`,
+    localSource: 'Installed outside the catalog',
     openRepo: 'Open the repository',
     targetLang: 'Translate into',
     autoLang: 'Follow the app language',
@@ -128,8 +135,6 @@ const MESSAGES = {
     title: '插件目录',
     loading: '正在读取插件目录…',
     loadFailed: message => `目录加载失败：${message}`,
-    count: n => `共 ${n} 个插件`,
-    fetched: when => `拉取于${when}`,
     search: '搜索插件',
     refresh: '重新拉取目录',
     rankBy: '排行口径',
@@ -168,6 +173,13 @@ const MESSAGES = {
       `当前 ${shown} 条 · 已翻译 ${done} 条${left ? ` · 待翻 ${left} 条` : ''} · 拉取于${when}`,
     install: '安装',
     installed: '已安装',
+    onlyInstalled: n => `只看已安装 ${n}`,
+    uninstall: '卸载',
+    uninstallTitle: name => `卸载 ${name}？`,
+    uninstallBody: name => `会把这个插件的文件从当前 profile 里删掉。以后随时可以从目录或 Git 重新装上。`,
+    uninstalled: name => `${name} 已卸载`,
+    uninstallFailed: message => `卸载失败：${message}`,
+    localSource: '不在目录里（从 Git 等处装的）',
     openRepo: '打开源码仓库',
     targetLang: '翻译成',
     autoLang: '跟随界面语言',
@@ -195,8 +207,6 @@ const MESSAGES = {
     title: '外掛目錄',
     loading: '正在讀取外掛目錄…',
     loadFailed: message => `目錄載入失敗：${message}`,
-    count: n => `共 ${n} 個外掛`,
-    fetched: when => `擷取於${when}`,
     search: '搜尋外掛',
     refresh: '重新擷取目錄',
     rankBy: '排行依據',
@@ -235,6 +245,13 @@ const MESSAGES = {
       `目前 ${shown} 條 · 已翻譯 ${done} 條${left ? ` · 待翻譯 ${left} 條` : ''} · 擷取於${when}`,
     install: '安裝',
     installed: '已安裝',
+    onlyInstalled: n => `只看已安裝 ${n}`,
+    uninstall: '卸載',
+    uninstallTitle: name => `卸載 ${name}？`,
+    uninstallBody: name => `會把這個外掛的檔案從目前 profile 刪掉。之後隨時可以從目錄或 Git 重新安裝。`,
+    uninstalled: name => `${name} 已卸載`,
+    uninstallFailed: message => `卸載失敗：${message}`,
+    localSource: '不在目錄裡（從 Git 等處安裝）',
     openRepo: '開啟原始碼倉庫',
     targetLang: '翻譯成',
     autoLang: '跟隨介面語言',
@@ -332,6 +349,16 @@ function hydrate() {
 /** Cache key carries the target language: switching language ≠ "already done". */
 function cacheKey(entry, target) {
   return `${entry.name}@${entry.shaShort || entry.sha || ''}#${target}`
+}
+
+/** Name, source description, or the translation already cached for this target. */
+function entryMatches(entry, needle, target) {
+  if (!needle) return true
+  return (
+    (entry.name || '').toLowerCase().includes(needle) ||
+    (entry.description || '').toLowerCase().includes(needle) ||
+    (cache[cacheKey(entry, target)] || '').toLowerCase().includes(needle)
+  )
 }
 
 function toolsOf(entry) {
@@ -481,7 +508,9 @@ function CatalogPage() {
   const [sort, setSort] = useState(prefs.sort)
   const [category, setCategory] = useState(prefs.category)
   const [target, setTarget] = useState(prefs.target)
-  const [installed, setInstalled] = useState(new Set())
+  const [installedRows, setInstalledRows] = useState([])
+  const [onlyInstalled, setOnlyInstalled] = useState(false)
+  const [pendingRemove, setPendingRemove] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [busyName, setBusyName] = useState('')
@@ -523,28 +552,32 @@ function CatalogPage() {
     void loadCatalog()
   }, [loadCatalog])
 
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      try {
-        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
-        const res = await host.request('plugins.manage', {
-          action: 'list',
-          ...(profile ? { profile } : {})
-        })
-        if (!alive) return
-        const names = (res && res.plugins ? res.plugins : [])
-          .map(row => row.name || row.catalog_name)
-          .filter(Boolean)
-        setInstalled(new Set(names))
-      } catch {
-        /* an unavailable list just leaves every card showing Install */
-      }
-    })()
-    return () => {
-      alive = false
+  const refreshInstalled = useCallback(async () => {
+    try {
+      const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
+      const res = await host.request('plugins.manage', {
+        action: 'list',
+        ...(profile ? { profile } : {})
+      })
+      setInstalledRows(res && res.plugins ? res.plugins : [])
+    } catch {
+      /* an unavailable list just leaves every card showing Install */
     }
   }, [])
+
+  useEffect(() => {
+    void refreshInstalled()
+  }, [refreshInstalled])
+
+  /** A row may be identified by its manifest name or its catalog name. */
+  const installedNames = useMemo(() => {
+    const names = new Set()
+    for (const row of installedRows) {
+      if (row.name) names.add(row.name)
+      if (row.catalog_name) names.add(row.catalog_name)
+    }
+    return names
+  }, [installedRows])
 
   // Persist the user's choices.
   useEffect(() => {
@@ -561,23 +594,42 @@ function CatalogPage() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1])
   }, [entries])
 
+  /** Installed plugins the catalog doesn't list at all (Git installs, bundled). */
+  const localRows = useMemo(() => {
+    if (!onlyInstalled) return []
+    return installedRows
+      .filter(row => !entries.some(e => e.name === row.name || e.name === row.catalog_name))
+      .map(row => ({
+        name: row.name,
+        description: row.description || '',
+        tier: row.source === 'bundled' ? 'bundled' : 'user',
+        stars: 0,
+        local: true
+      }))
+  }, [onlyInstalled, installedRows, entries])
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const active = SORTS.find(s => s.id === sort) || SORTS[0]
-    return entries
+    const base = entries
       .filter(entry => (category ? (entry.category || '') === category : true))
-      .filter(entry => {
-        if (!needle) return true
-        const translated = cache[cacheKey(entry, resolvedTarget)] || ''
-        return (
-          (entry.name || '').toLowerCase().includes(needle) ||
-          (entry.description || '').toLowerCase().includes(needle) ||
-          translated.toLowerCase().includes(needle)
-        )
-      })
+      .filter(entry => (onlyInstalled ? installedNames.has(entry.name) : true))
+      .filter(entry => entryMatches(entry, needle, resolvedTarget))
       .sort((a, b) => active.cmp(a, b) || (b.stars || 0) - (a.stars || 0))
+    const locals = localRows.filter(entry => entryMatches(entry, needle, resolvedTarget))
     // `tick` re-sorts after a translation lands so search-visible state stays true.
-  }, [entries, query, category, sort, resolvedTarget, tick])
+    return locals.length ? [...base, ...locals] : base
+  }, [
+    entries,
+    query,
+    category,
+    sort,
+    resolvedTarget,
+    onlyInstalled,
+    installedNames,
+    localRows,
+    tick
+  ])
 
   const pending = useMemo(
     () => filtered.filter(entry => !cache[cacheKey(entry, resolvedTarget)]),
@@ -733,7 +785,7 @@ function CatalogPage() {
           600000
         )
         if (!res || !res.ok) throw new Error((res && res.error) || 'install rejected')
-        setInstalled(prev => new Set([...prev, entry.name]))
+        await refreshInstalled()
         host.notify({ kind: 'success', message: t('installedOk', entry.name) })
       } catch (e) {
         host.notify({ kind: 'error', message: t('installFailed', (e && e.message) || e) })
@@ -741,8 +793,29 @@ function CatalogPage() {
         setBusyName('')
       }
     },
-    [t]
+    [refreshInstalled, t]
   )
+
+  /** ConfirmDialog's onConfirm: throw to keep the dialog open with the error. */
+  const doUninstall = useCallback(async () => {
+    const target = pendingRemove
+    if (!target) return
+    const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
+    const res = await host.request(
+      'plugins.manage',
+      { action: 'remove', name: target.name, ...(profile ? { profile } : {}) },
+      180000
+    )
+    if (!res || !res.ok) {
+      const message = (res && res.error) || 'remove rejected'
+      host.notify({ kind: 'error', message: t('uninstallFailed', message) })
+      throw new Error(message)
+    }
+    host.notify({ kind: 'success', message: t('uninstalled', target.name) })
+    setPendingRemove(null)
+    await refreshInstalled()
+    setTick(v => v + 1)
+  }, [pendingRemove, refreshInstalled, t])
 
   const translatedCount = filtered.length - pending.length
 
@@ -894,6 +967,18 @@ function CatalogPage() {
         children: [
           jsx('button', {
             type: 'button',
+            onClick: () => setOnlyInstalled(value => !value),
+            'aria-pressed': onlyInstalled,
+            className: cn(
+              'shrink-0 whitespace-nowrap rounded px-2 py-0.5',
+              onlyInstalled
+                ? 'bg-(--ui-bg-quaternary) font-medium'
+                : 'text-(--ui-text-tertiary)'
+            ),
+            children: t('onlyInstalled', installedRows.length)
+          }),
+          jsx('button', {
+            type: 'button',
             onClick: () => setCategory(''),
             className: cn(
               'shrink-0 whitespace-nowrap rounded px-2 py-0.5',
@@ -984,7 +1069,7 @@ function CatalogPage() {
                 children: filtered.map((entry, rank) => {
                   const key = cacheKey(entry, resolvedTarget)
                   const blurb = cache[key]
-                  const isInstalled = installed.has(entry.name)
+                  const isInstalled = installedNames.has(entry.name)
                   const isSelected = selected.has(entry.name)
                   const busy = busyName === entry.name
                   const toolCount = toolsOf(entry)
@@ -1018,25 +1103,36 @@ function CatalogPage() {
                               children: `#${rank + 1}`
                             }),
                             jsx(Tip, {
-                              label: entry.repo || entry.docsUrl || '',
-                              children: jsx('button', {
-                                type: 'button',
-                                onClick: () => openExternal(entry.repo || entry.docsUrl, t('openFailed')),
-                                className: cn(
-                                  'cursor-pointer text-sm font-medium underline-offset-4',
-                                  'hover:underline hover:text-(--ui-text-primary)'
-                                ),
-                                children: entry.name
-                              })
+                              label: entry.local ? '' : entry.repo || entry.docsUrl || '',
+                              children: entry.local
+                                ? jsx('span', {
+                                    className: 'text-sm font-medium',
+                                    children: entry.name
+                                  })
+                                : jsx('button', {
+                                    type: 'button',
+                                    onClick: () =>
+                                      openExternal(entry.repo || entry.docsUrl, t('openFailed')),
+                                    className: cn(
+                                      'cursor-pointer text-sm font-medium underline-offset-4',
+                                      'hover:underline hover:text-(--ui-text-primary)'
+                                    ),
+                                    children: entry.name
+                                  })
                             }),
                             jsx('span', {
                               className: 'text-xs text-(--ui-text-tertiary)',
                               children: t(`tier.${entry.tier || 'community'}`)
                             }),
-                            jsx('span', {
-                              className: 'text-xs text-(--ui-text-tertiary)',
-                              children: categoryLabel(t, entry.category)
-                            }),
+                            entry.local
+                              ? jsx('span', {
+                                  className: 'text-xs text-(--ui-text-tertiary)',
+                                  children: t('localSource')
+                                })
+                              : jsx('span', {
+                                  className: 'text-xs text-(--ui-text-tertiary)',
+                                  children: categoryLabel(t, entry.category)
+                                }),
                             entry.stars
                               ? jsx('span', {
                                   className: 'text-xs text-(--ui-text-tertiary)',
@@ -1073,9 +1169,22 @@ function CatalogPage() {
                                   children: busy ? t('translating') : t('translate')
                                 }),
                             isInstalled
-                              ? jsx('span', {
-                                  className: 'text-xs text-(--ui-text-tertiary)',
-                                  children: t('installed')
+                              ? jsxs('span', {
+                                  className: 'inline-flex items-center gap-1.5',
+                                  children: [
+                                    jsx('span', {
+                                      className: 'text-xs text-(--ui-text-tertiary)',
+                                      children: t('installed')
+                                    }),
+                                    jsx(Button, {
+                                      size: 'xs',
+                                      variant: 'ghost',
+                                      type: 'button',
+                                      disabled: busy,
+                                      onClick: () => setPendingRemove(entry),
+                                      children: t('uninstall')
+                                    })
+                                  ]
                                 })
                               : jsx(Button, {
                                   size: 'xs',
@@ -1097,7 +1206,16 @@ function CatalogPage() {
                   )
                 })
               })
-            })
+            }),
+      jsx(ConfirmDialog, {
+        open: Boolean(pendingRemove),
+        onClose: () => setPendingRemove(null),
+        onConfirm: doUninstall,
+        title: pendingRemove ? t('uninstallTitle', pendingRemove.name) : '',
+        description: pendingRemove ? t('uninstallBody', pendingRemove.name) : '',
+        confirmLabel: t('uninstall'),
+        destructive: true
+      })
     ]
   })
 }
@@ -1115,10 +1233,19 @@ export default {
       data: { path: PAGE_PATH },
       render: () => jsx(CatalogPage, {})
     })
-    ctx.register({
-      id: 'nav',
-      area: SIDEBAR_NAV_AREA,
-      data: { path: PAGE_PATH, label: ctx.i18n.t('nav'), codicon: 'globe' }
+
+    // The sidebar label is read once at registration, so re-register it when
+    // the app language changes — otherwise it strands in the old language.
+    const registerNav = () =>
+      ctx.register({
+        id: 'nav',
+        area: SIDEBAR_NAV_AREA,
+        data: { path: PAGE_PATH, label: ctx.i18n.t('nav'), codicon: 'globe' }
+      })
+    let disposeNav = registerNav()
+    ctx.i18n.onLocaleChange(() => {
+      disposeNav()
+      disposeNav = registerNav()
     })
   }
 }

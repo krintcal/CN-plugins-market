@@ -10,6 +10,8 @@ The curated catalog is written in English. This plugin adds a catalog page to He
 
 - **A real ranking.** Sort the catalog by **most starred**, **recently updated**, **newly listed**, or **most capable** (tools + hooks), with the rank number on every card. Category chips and a search box that also matches the translation once you have one.
 - **One-click install.** Same backend path as the built-in catalog page (`plugins.manage`), so installed state stays in sync across the app.
+- **Know what's installed.** `Installed only` narrows the list to what you actually have — including plugins installed outside the catalog (Git installs, bundled ones) that the catalog alone can't show. Every installed entry carries an `Uninstall` button behind a confirm dialog.
+- **Follows the app language**, sidebar entry included: the nav label re-registers itself when you switch languages instead of stranding in the old one.
 - **Translate on demand, or in bulk.** `Translate` on a single card, or `Translate N untranslated` to walk the current filter, with progress and a stop button. Bulk runs send **8 entries per model call**, so a 400-entry catalog is minutes, not hours.
 - **Pick exactly what you want.** `Select` puts the list into selection mode: every card grows a checkbox, `Select all N shown` respects the current filter, and `Translate N selected` translates only those. The ticks clear themselves when the run finishes.
 - **Live progress.** The bulk button carries a spinner, `done/total`, and the name of the plugin being translated right now, so a long run never looks frozen.
@@ -21,6 +23,8 @@ The curated catalog is written in English. This plugin adds a catalog page to He
 
 - **真的排行**：按**最受欢迎 / 最近更新 / 新上榜 / 功能最多**（工具＋钩子）排序，每张卡带名次；分类芯片 + 搜索框（翻过的还会连同中文一起搜）。
 - **一键安装**：走和官方目录页同一个后端接口（`plugins.manage`），安装状态全 App 同步。
+- **看得见装了什么**：点「只看已安装」把列表收成你已经装的那些——**连目录里没有的也列出来**（从 Git 装的、随包内置的），目录本身看不到它们。每个已安装的条目带「卸载」，点了会先弹确认。
+- **界面语言跟着 App 走**，侧栏那行也是：切语言时它会重新注册，不会卡在旧语言。
 - **单条翻，也能批量翻**：单卡一个「译」；顶上「翻译未翻译的 N 条」按当前筛选往下推，带进度和停止按钮。批量是**一次调用翻译 8 条**，400 条是几分钟的量级。
 - **想翻哪几条自己勾**：点「多选」进入选择模式，每张卡左边才出现勾选框；「全选当前 N 条」会跟随当前筛选；「翻译选中的 N 条」只翻这几条。**翻译跑完勾选会自动清空**，不用手动收拾。
 - **进度是活的**：批量翻译时按钮上带转轮和 `已完成/总数`，右侧还会显示**正在翻哪一个插件**，跑久了也不会像卡死。
