@@ -123,7 +123,7 @@ const MESSAGES = {
     uninstall: 'Uninstall',
     uninstallTitle: name => `Uninstall ${name}?`,
     uninstallBody: name =>
-      `This deletes ${name}'s files from the current profile. It can be reinstalled from the catalog or from Git at any time.`,
+      `This deletes ${name}'s files from the current profile, and its desktop half too when the package ships one. It can be reinstalled from the catalog or from Git at any time.`,
     uninstalled: name => `${name} uninstalled.`,
     uninstallFailed: message => `Uninstall failed: ${message}`,
     localSource: 'Installed outside the catalog',
@@ -210,7 +210,7 @@ const MESSAGES = {
     onlyInstalled: n => `只看已安装 ${n}`,
     uninstall: '卸载',
     uninstallTitle: name => `卸载 ${name}？`,
-    uninstallBody: name => `会把这个插件的文件从当前 profile 里删掉。以后随时可以从目录或 Git 重新装上。`,
+    uninstallBody: name => `会把这个插件的文件从当前 profile 里删掉，带桌面半边的连桌面那份一起删。以后随时可以从目录或 Git 重新装上。`,
     uninstalled: name => `${name} 已卸载`,
     uninstallFailed: message => `卸载失败：${message}`,
     localSource: '不在目录里（从 Git 等处装的）',
@@ -296,7 +296,7 @@ const MESSAGES = {
     onlyInstalled: n => `只看已安裝 ${n}`,
     uninstall: '卸載',
     uninstallTitle: name => `卸載 ${name}？`,
-    uninstallBody: name => `會把這個外掛的檔案從目前 profile 刪掉。之後隨時可以從目錄或 Git 重新安裝。`,
+    uninstallBody: name => `會把這個外掛的檔案從目前 profile 刪掉，帶桌面半邊的連桌面那份一起刪。之後隨時可以從目錄或 Git 重新安裝。`,
     uninstalled: name => `${name} 已卸載`,
     uninstallFailed: message => `卸載失敗：${message}`,
     localSource: '不在目錄裡（從 Git 等處安裝）',
@@ -910,18 +910,68 @@ function CatalogPage() {
     [installedByName, refreshInstalled, t]
   )
 
+  /**
+   * A plugin is a *package* that can carry two halves — the agent half in the
+   * profile's `plugins/`, and the desktop half in the app's `desktop-plugins/`.
+   * Uninstall removes both, and neither half being absent is an error: whichever
+   * one is there goes. The desktop half is only reachable through the app's own
+   * door (`removeDesktopPlugin`, the one the built-in Plugins tab's trash uses).
+   */
+  const removePackage = useCallback(
+    async (entry, row) => {
+      const name = (row && (row.name || row.catalog_name)) || entry.name
+      const errors = []
+      let removedAgent = false
+      let removedDesktop = false
+
+      try {
+        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
+        const res = await host.request(
+          'plugins.manage',
+          { action: 'remove', name, ...(profile ? { profile } : {}) },
+          180000
+        )
+        if (res && res.ok) removedAgent = true
+        else errors.push(`agent: ${(res && res.error) || 'remove rejected'}`)
+      } catch (e) {
+        errors.push(`agent: ${(e && e.message) || e}`)
+      }
+
+      const bridge = typeof window !== 'undefined' ? window.hermesDesktop : undefined
+      const canDropDesktop = !row || row.has_desktop_half !== false
+      if (canDropDesktop && bridge && typeof bridge.removeDesktopPlugin === 'function') {
+        try {
+          const res = await bridge.removeDesktopPlugin({ name })
+          if (res && res.ok) removedDesktop = true
+          else errors.push(`desktop: ${(res && res.error) || 'rejected'}`)
+        } catch (e) {
+          errors.push(`desktop: ${(e && e.message) || e}`)
+        }
+        try {
+          await bridge.reconcileDesktopPlugins?.()
+        } catch {
+          /* a sweep we can't run is not a failed uninstall */
+        }
+      }
+
+      return { errors, removedAgent, removedDesktop }
+    },
+    []
+  )
+
   /** ConfirmDialog's onConfirm: throw to keep the dialog open with the error. */
   const doUninstall = useCallback(async () => {
     const target = pendingRemove
     if (!target) return
-    const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
-    const res = await host.request(
-      'plugins.manage',
-      { action: 'remove', name: target.name, ...(profile ? { profile } : {}) },
-      180000
-    )
-    if (!res || !res.ok) {
-      const message = (res && res.error) || 'remove rejected'
+    setBusyName(target.name)
+    let out
+    try {
+      out = await removePackage(target, installedByName.get(target.name))
+    } finally {
+      setBusyName('')
+    }
+    if (!out.removedAgent && !out.removedDesktop) {
+      const message = out.errors.join(' · ') || 'remove rejected'
       host.notify({ kind: 'error', message: t('uninstallFailed', message) })
       throw new Error(message)
     }
@@ -929,7 +979,7 @@ function CatalogPage() {
     setPendingRemove(null)
     await refreshInstalled()
     setTick(v => v + 1)
-  }, [pendingRemove, refreshInstalled, t])
+  }, [installedByName, pendingRemove, refreshInstalled, removePackage, t])
 
   const translatedCount = filtered.length - pending.length
 
