@@ -52,6 +52,17 @@ const MAX_CONSECUTIVE_FAILURES = 3
 const SELECT_CLASS =
   'h-6 max-w-[15rem] rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none'
 
+/**
+ * The SDK switch paints its checked track with the theme's `primary`, which is
+ * white in the light theme — and the checked thumb goes white too, so the whole
+ * control disappears. Repaint both states with the `--ui-*` variables this page
+ * already uses, so it stays readable in either theme.
+ */
+const SWITCH_CLASS =
+  'shrink-0 border border-(--ui-border) bg-(--ui-bg-quaternary) ' +
+  'data-[state=checked]:border-[var(--ui-accent,#2f6fed)] ' +
+  'data-[state=checked]:bg-[var(--ui-accent,#2f6fed)]'
+
 const PREFS_KEY = 'prefs'
 /** Bumped when the cache key shape changes, so stale entries can't be read. */
 const CACHE_KEY = 'translations.v2'
@@ -1426,6 +1437,7 @@ function CatalogPage() {
                                             checked: rowEnabled,
                                             disabled: busy,
                                             'aria-label': t('toggleAria', entry.name),
+                                            className: SWITCH_CLASS,
                                             onCheckedChange: next => toggleEntry(entry, next)
                                           })
                                         })
