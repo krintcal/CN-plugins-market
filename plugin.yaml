@@ -16,7 +16,7 @@ platforms:
   - linux
   - macos
   - windows
-requires_hermes: ">=0.21.5"
+requires_hermes: ">=0.21.2"
 provides_tools: []
 provides_hooks: []
 requires_env: []

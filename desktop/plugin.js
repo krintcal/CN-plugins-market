@@ -25,6 +25,11 @@ import {
   host,
   ROUTES_AREA,
   ScrollArea,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   SIDEBAR_NAV_AREA,
   Switch,
   Tip,
@@ -47,10 +52,6 @@ const MAX_CHARS = 1500
 const BATCH_SIZE = 8
 /** Stop a bulk run after this many failed calls in a row (quota, offline, …). */
 const MAX_CONSECUTIVE_FAILURES = 3
-
-/** One look for every compact filter control. */
-const SELECT_CLASS =
-  'h-6 max-w-[15rem] rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none'
 
 /**
  * The SDK switch paints its checked track with the theme's `primary`, which is
@@ -757,7 +758,11 @@ function CatalogPage() {
     const needle = query.trim().toLowerCase()
     const active = SORTS.find(s => s.id === sort) || SORTS[0]
     const base = entries
-      .filter(entry => (category ? (entry.category || '') === category : true))
+      .filter(entry => {
+        if (!category) return true
+        const slug = entry.category || ''
+        return category === '__none' ? slug === '' : slug === category
+      })
       .filter(entry =>
         onlyInstalled
           ? (Boolean(installedByName.get(entry.name)) || desktopHalves.has(entry.name)) &&
@@ -1154,14 +1159,22 @@ function CatalogPage() {
             className: 'flex items-center gap-2',
             children: [
               jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('rankBy') }),
-              jsx('select', {
+              jsxs(Select, {
                 value: sort,
-                onChange: event => setSort(event.target.value),
-                'aria-label': t('rankBy'),
-                className: SELECT_CLASS,
-                children: SORTS.map(option =>
-                  jsx('option', { value: option.id, children: t(option.label) }, option.id)
-                )
+                onValueChange: next => setSort(next),
+                children: [
+                  jsx(SelectTrigger, {
+                    className:
+                      'h-6 max-w-[15rem] rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none',
+                    'aria-label': t('rankBy'),
+                    children: jsx(SelectValue, {})
+                  }),
+                  jsx(SelectContent, {
+                    children: SORTS.map(option =>
+                      jsx(SelectItem, { value: option.id, children: t(option.label) }, option.id)
+                    )
+                  })
+                ]
               })
             ]
           }),
@@ -1169,20 +1182,28 @@ function CatalogPage() {
             className: 'flex items-center gap-2',
             children: [
               jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('filterCategory') }),
-              jsxs('select', {
-                value: category,
-                onChange: event => setCategory(event.target.value),
-                'aria-label': t('filterCategory'),
-                className: SELECT_CLASS,
+              jsxs(Select, {
+                value: category === '' ? '__all' : category,
+                onValueChange: next => setCategory(next === '__all' ? '' : next),
                 children: [
-                  jsx('option', { value: '', children: t('all', entries.length) }, '__all'),
-                  ...categories.map(([slug, count]) =>
-                    jsx(
-                      'option',
-                      { value: slug, children: `${categoryLabel(t, slug)} ${count}` },
-                      slug || '__none'
-                    )
-                  )
+                  jsx(SelectTrigger, {
+                    className:
+                      'h-6 max-w-[15rem] rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none',
+                    'aria-label': t('filterCategory'),
+                    children: jsx(SelectValue, {})
+                  }),
+                  jsx(SelectContent, {
+                    children: [
+                      jsx(SelectItem, { value: '__all', children: t('all', entries.length) }, '__all'),
+                      ...categories.map(([slug, count]) =>
+                        jsx(
+                          SelectItem,
+                          { value: slug || '__none', children: `${categoryLabel(t, slug)} ${count}` },
+                          slug || '__none'
+                        )
+                      )
+                    ]
+                  })
                 ]
               })
             ]
@@ -1202,30 +1223,38 @@ function CatalogPage() {
                 className: 'flex items-center gap-2',
                 children: [
                   jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('sourceLabel') }),
-                  jsxs('select', {
+                  jsxs(Select, {
                     value: sourceFilter,
-                    onChange: event => setSourceFilter(event.target.value),
-                    'aria-label': t('sourceLabel'),
-                    className: SELECT_CLASS,
+                    onValueChange: next => setSourceFilter(next),
                     children: [
-                      jsx(
-                        'option',
-                        { value: 'user', children: `${t('sourceUser')} ${installedCounts.user}` },
-                        'user'
-                      ),
-                      jsx(
-                        'option',
-                        {
-                          value: 'bundled',
-                          children: `${t('sourceBundled')} ${installedCounts.bundled}`
-                        },
-                        'bundled'
-                      ),
-                      jsx(
-                        'option',
-                        { value: 'all', children: `${t('sourceAll')} ${installedCounts.all}` },
-                        'all'
-                      )
+                      jsx(SelectTrigger, {
+                        className:
+                          'h-6 max-w-[15rem] rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none',
+                        'aria-label': t('sourceLabel'),
+                        children: jsx(SelectValue, {})
+                      }),
+                      jsx(SelectContent, {
+                        children: [
+                          jsx(
+                            SelectItem,
+                            { value: 'user', children: `${t('sourceUser')} ${installedCounts.user}` },
+                            'user'
+                          ),
+                          jsx(
+                            SelectItem,
+                            {
+                              value: 'bundled',
+                              children: `${t('sourceBundled')} ${installedCounts.bundled}`
+                            },
+                            'bundled'
+                          ),
+                          jsx(
+                            SelectItem,
+                            { value: 'all', children: `${t('sourceAll')} ${installedCounts.all}` },
+                            'all'
+                          )
+                        ]
+                      })
                     ]
                   })
                 ]
@@ -1235,18 +1264,26 @@ function CatalogPage() {
             className: 'flex items-center gap-2',
             children: [
               jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('targetLang') }),
-              jsxs('select', {
+              jsxs(Select, {
                 value: target,
-                onChange: event => setTarget(event.target.value),
-                'aria-label': t('targetLang'),
-                className: SELECT_CLASS,
-                children: TARGETS.map(option =>
-                  jsx(
-                    'option',
-                    { value: option.id, children: option.endonym || t('autoLang') },
-                    option.id
-                  )
-                )
+                onValueChange: next => setTarget(next),
+                children: [
+                  jsx(SelectTrigger, {
+                    className:
+                      'h-6 max-w-[15rem] rounded border border-(--ui-border) bg-(--ui-bg-input) px-1 text-xs outline-none',
+                    'aria-label': t('targetLang'),
+                    children: jsx(SelectValue, {})
+                  }),
+                  jsx(SelectContent, {
+                    children: TARGETS.map(option =>
+                      jsx(
+                        SelectItem,
+                        { value: option.id, children: option.endonym || t('autoLang') },
+                        option.id
+                      )
+                    )
+                  })
+                ]
               })
             ]
           })
@@ -1542,9 +1579,14 @@ export default {
         data: { path: PAGE_PATH, label: ctx.i18n.t('nav'), codicon: 'globe' }
       })
     let disposeNav = registerNav()
-    ctx.i18n.onLocaleChange(() => {
-      disposeNav()
-      disposeNav = registerNav()
-    })
+    // `ctx.i18n.onLocaleChange` is 0.21.5+; guard it so an older desktop shell
+    // still loads the page (the nav label then just won't follow a language
+    // switch until the app is updated).
+    if (typeof ctx.i18n.onLocaleChange === 'function') {
+      ctx.i18n.onLocaleChange(() => {
+        disposeNav()
+        disposeNav = registerNav()
+      })
+    }
   }
 }

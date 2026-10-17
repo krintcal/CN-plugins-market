@@ -36,24 +36,26 @@ The curated catalog is written in English. This plugin adds a catalog page to He
 
 ## Install
 
-From the Hermes plugin catalog:
+This plugin is **not in the official catalog** — clone it straight into the app's plugin folder. Do not install it through the plugin command: that path copies the desktop half back with a `.hermes-package.json` marker, which switches the plugin off by default, and a desktop-only package has no switch in the app to turn it back on.
 
 ```bash
-hermes plugins install cn-plugins-market --enable
-```
-
-or manually:
-
-```bash
+# macOS / Linux
 git clone https://github.com/krintcal/CN-plugins-market.git ~/.hermes/desktop-plugins/cn-plugins-market
+# Windows (PowerShell) — %USERPROFILE%\.hermes\desktop-plugins\
+git clone https://github.com/krintcal/CN-plugins-market.git "$env:USERPROFILE\.hermes\desktop-plugins\cn-plugins-market"
 ```
 
 Then, in the Desktop app: **⌘K → Reload desktop plugins**. The page appears in the sidebar as **Plugin catalog** (中文界面下显示为「插件目录」).
 
 ## 安装
 
+本插件**不在官方目录里**，请直接 clone 进 App 的插件目录。别用插件命令装：那条路会把桌面半边拷回来并盖上 `.hermes-package.json` 标记，一有标记就默认关闭，而纯桌面插件在 App 里没有开关可以打开。
+
 ```bash
-hermes plugins install cn-plugins-market --enable
+# macOS / Linux
+git clone https://github.com/krintcal/CN-plugins-market.git ~/.hermes/desktop-plugins/cn-plugins-market
+# Windows (PowerShell)
+git clone https://github.com/krintcal/CN-plugins-market.git "$env:USERPROFILE\.hermes\desktop-plugins\cn-plugins-market"
 ```
 
 装完在桌面端按 **⌘K → Reload desktop plugins**，左侧导航就会出现「插件目录」。
