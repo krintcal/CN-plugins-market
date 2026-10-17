@@ -110,6 +110,10 @@ const MESSAGES = {
     translating: 'Translating…',
     translateMissing: n => `Translate ${n} untranslated`,
     translateSelected: n => `Translate ${n} selected`,
+    translateConfirmTitle: n => `Translate ${n} plugins?`,
+    translateConfirmBody: (n, calls) =>
+      `That is ${calls} model call(s) on your active provider and model. Results are cached per plugin, so you pay for them once.`,
+    translateConfirmGo: 'Translate',
     selected: n => `${n} selected`,
     selectAll: n => `Select all ${n} shown`,
     clearSelection: 'Clear',
@@ -201,6 +205,10 @@ const MESSAGES = {
     translating: '译…',
     translateMissing: n => `翻译未翻译的 ${n} 条`,
     translateSelected: n => `翻译选中的 ${n} 条`,
+    translateConfirmTitle: n => `翻译 ${n} 条插件简介？`,
+    translateConfirmBody: (n, calls) =>
+      `共 ${n} 条，将调用 ${calls} 次模型（使用当前的 Provider 与模型）。结果按插件缓存，只需付费一次。`,
+    translateConfirmGo: '开始翻译',
     selected: n => `已选 ${n} 条`,
     selectAll: n => `全选当前 ${n} 条`,
     clearSelection: '清空',
@@ -289,6 +297,10 @@ const MESSAGES = {
     translating: '譯…',
     translateMissing: n => `翻譯未翻譯的 ${n} 條`,
     translateSelected: n => `翻譯選取的 ${n} 條`,
+    translateConfirmTitle: n => `翻譯 ${n} 條外掛簡介？`,
+    translateConfirmBody: (n, calls) =>
+      `共 ${n} 條，將呼叫 ${calls} 次模型（使用目前的 Provider 與模型）。結果依外掛快取，只需付費一次。`,
+    translateConfirmGo: '開始翻譯',
     selected: n => `已選 ${n} 條`,
     selectAll: n => `全選目前 ${n} 條`,
     clearSelection: '清空',
@@ -580,6 +592,7 @@ function CatalogPage() {
   const [onlyInstalled, setOnlyInstalled] = useState(false)
   const [sourceFilter, setSourceFilter] = useState('user')
   const [pendingRemove, setPendingRemove] = useState(null)
+  const [pendingBulk, setPendingBulk] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [busyName, setBusyName] = useState('')
@@ -859,6 +872,12 @@ function CatalogPage() {
     [instructions, resolvedTarget, t]
   )
 
+  /** The exact queue a bulk run would use, so the cost shown is the real cost. */
+  const queueFor = useCallback(
+    list => list.filter(entry => !cache[cacheKey(entry, resolvedTarget)] && (entry.description || '').trim()),
+    [cache, resolvedTarget]
+  )
+
   /** One runner for both bulk entries: batches of BATCH_SIZE, stoppable. */
   const runTranslation = useCallback(
     async list => {
@@ -915,12 +934,14 @@ function CatalogPage() {
   )
 
   const translateMissing = useCallback(() => {
-    void runTranslation(pending)
-  }, [pending, runTranslation])
+    const q = queueFor(pending)
+    if (q.length) setPendingBulk({ queue: q })
+  }, [pending, queueFor])
 
   const translateSelected = useCallback(() => {
-    void runTranslation(selectedPending)
-  }, [selectedPending, runTranslation])
+    const q = queueFor(selectedPending)
+    if (q.length) setPendingBulk({ queue: q })
+  }, [selectedPending, queueFor])
 
   const stopBulk = useCallback(() => {
     if (bulkRef.current) bulkRef.current.stop = true
@@ -1551,6 +1572,25 @@ function CatalogPage() {
         description: pendingRemove ? t('uninstallBody', pendingRemove.name) : '',
         confirmLabel: t('uninstall'),
         destructive: true
+      }),
+      jsx(ConfirmDialog, {
+        open: Boolean(pendingBulk),
+        onClose: () => setPendingBulk(null),
+        onConfirm: () => {
+          const q = pendingBulk.queue
+          setPendingBulk(null)
+          void runTranslation(q)
+        },
+        title: t('translateConfirmTitle', pendingBulk ? pendingBulk.queue.length : 0),
+        description: pendingBulk
+          ? t(
+              'translateConfirmBody',
+              pendingBulk.queue.length,
+              Math.ceil(pendingBulk.queue.length / BATCH_SIZE),
+              resolvedTarget
+            )
+          : '',
+        confirmLabel: t('translateConfirmGo')
       })
     ]
   })
