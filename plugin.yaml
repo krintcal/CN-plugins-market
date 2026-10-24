@@ -1,17 +1,22 @@
 name: cn-plugins-market
-version: "1.1.0"
+version: "1.2.1"
 description: >-
   Browse the Hermes plugin catalog inside the Desktop app, in your own
   language. Adds a catalog page that ranks the curated catalog four ways
   (most starred / recently updated / newly listed / most capable), installs a
   plugin with one click, updates installed catalog entries in one click, flags
-  entries that need a newer Hermes, and translates any plugin's blurb into the
-  language you pick — each blurb translated once and cached, so repeat browsing
-  costs nothing. Read-only against the public catalog; the only model call is an
-  explicit per-entry translation on whatever provider you already have active.
+  entries that need a newer Hermes, expands a card to show its version,
+  platforms, maintainer, install command, required env vars, tools/hooks,
+  screenshots and links, and translates any plugin's blurb into the language
+  you pick — each blurb translated once and cached, so repeat browsing costs
+  nothing. Search understands common Chinese intents (记忆, 语音, 图片, …) by
+  mapping them to English catalog keywords, entirely locally. Read-only against
+  the public catalog; the only model call is an explicit per-entry translation
+  on whatever provider you already have active.
   在 Hermes 桌面端用中文浏览并翻译官方插件目录：四档排行、一键安装、一键升级已装插件、
-  标出版本门槛，每条简介翻译一次即永久缓存，之后浏览不再花钱；只读目录，唯一会调模型
-  的动作是你手动点的翻译。
+  标出版本门槛；卡片可展开看版本、平台、维护者、安装命令、环境变量、工具/钩子、截图和链接；
+  支持中文检索（把「记忆」「语音」「图片」等意图映射到英文关键词，纯本地不调模型）；
+  每条简介翻译一次即永久缓存，之后浏览不再花钱；只读目录，唯一会调模型的动作是你手动点的翻译。
 author: krintcal
 kind: standalone
 platforms:

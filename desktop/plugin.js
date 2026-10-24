@@ -21,6 +21,9 @@ import {
   Button,
   cn,
   ConfirmDialog,
+  CopyButton,
+  DisclosureCaret,
+  EmptyState,
   GlyphSpinner,
   haptic,
   host,
@@ -75,6 +78,98 @@ const CACHE_KEY = 'translations.v2'
 
 /** Plugin names are pasted into a shell command, so only this shape is allowed. */
 const PLUGIN_NAME_RE = /^[A-Za-z0-9._-]+$/
+
+/**
+ * The catalog is written in English: only 11 of 800 entries carry Chinese in
+ * their `description`. Typing a Chinese intent into the search box would find
+ * almost nothing, so map the common intents onto English stems that actually
+ * appear in names/blurbs. Plain substring match, no model, no network.
+ */
+const CN_SYNONYMS = {
+  记忆: ['memory', 'remember', 'recall'],
+  备忘: ['memory', 'remember', 'note', 'recall'],
+  笔记: ['memory', 'remember', 'note', 'recall'],
+  回忆: ['memory', 'remember', 'note', 'recall'],
+  桌面: ['desktop', 'gui'],
+  界面: ['desktop', 'gui', 'ui', 'window'],
+  窗口: ['desktop', 'gui', 'ui', 'window'],
+  语音: ['voice', 'tts', 'speech', 'audio', 'transcri'],
+  朗读: ['voice', 'tts', 'speech', 'audio', 'transcri'],
+  说话: ['voice', 'tts', 'speech', 'audio', 'transcri'],
+  听写: ['voice', 'tts', 'speech', 'audio', 'transcri'],
+  图片: ['image', 'picture', 'screenshot', 'vision', 'photo', 'draw'],
+  图像: ['image', 'picture', 'paint', 'draw', 'screenshot', 'vision', 'photo'],
+  绘图: ['image', 'picture', 'paint', 'draw', 'screenshot', 'vision', 'photo'],
+  截图: ['image', 'picture', 'paint', 'draw', 'screenshot', 'vision', 'photo'],
+  封面: ['image', 'picture', 'paint', 'draw', 'screenshot', 'vision', 'photo'],
+  视频: ['video', 'movie'],
+  影片: ['video', 'movie'],
+  音乐: ['music', 'song', 'audio'],
+  歌曲: ['music', 'song', 'audio'],
+  音频: ['music', 'song', 'audio'],
+  网页: ['web', 'browser', 'scrape', 'crawl', 'fetch'],
+  浏览器: ['web', 'browser', 'scrape', 'crawl', 'fetch'],
+  爬取: ['web', 'browser', 'scrape', 'crawl', 'fetch'],
+  抓取: ['web', 'browser', 'scrape', 'crawl', 'fetch'],
+  新闻: ['news', 'feed', 'rss', 'digest', 'headline'],
+  资讯: ['news', 'feed', 'rss', 'digest', 'headline'],
+  订阅: ['news', 'feed', 'rss', 'digest', 'headline'],
+  摘要: ['news', 'feed', 'rss', 'digest', 'headline'],
+  邮件: ['mail', 'email', 'inbox'],
+  收件箱: ['mail', 'email', 'inbox'],
+  日程: ['calendar', 'schedule', 'remind', 'todo'],
+  日历: ['calendar', 'schedule', 'remind', 'todo'],
+  提醒: ['calendar', 'schedule', 'remind', 'todo'],
+  待办: ['calendar', 'schedule', 'remind', 'todo'],
+  代码: ['code', 'git', 'repo', 'dev', 'program'],
+  编程: ['code', 'git', 'repo', 'dev', 'program'],
+  仓库: ['code', 'git', 'repo', 'dev', 'program'],
+  开发: ['code', 'git', 'repo', 'dev', 'program'],
+  文档: ['file', 'document', 'pdf', 'docx', 'spreadsheet', 'excel', 'csv'],
+  文件: ['file', 'document', 'pdf', 'docx', 'spreadsheet', 'excel', 'csv'],
+  表格: ['file', 'document', 'pdf', 'docx', 'spreadsheet', 'excel', 'csv'],
+  数据: ['data', 'dataset', 'csv', 'json'],
+  统计: ['metric', 'analytic'],
+  用量: ['usage', 'quota', 'spend'],
+  监控: ['monitor', 'watch', 'alert'],
+  健康: ['health', 'fitness', 'sleep', 'calorie'],
+  运动: ['health', 'fitness', 'sleep', 'calorie'],
+  睡眠: ['health', 'fitness', 'sleep', 'calorie'],
+  饮食: ['health', 'fitness', 'sleep', 'calorie'],
+  翻译: ['translat', 'language', 'i18n'],
+  多语言: ['translat', 'language', 'i18n'],
+  自动化: ['automat', 'workflow', 'pipeline'],
+  定时: ['cron', 'schedul', 'timer'],
+  任务: ['task', 'job', 'queue'],
+  安全: ['secur', 'vault', 'secret', 'password', 'credential'],
+  密钥: ['secur', 'vault', 'secret', 'password', 'credential'],
+  密码: ['secur', 'vault', 'secret', 'password', 'credential'],
+  凭证: ['secur', 'vault', 'secret', 'password', 'credential'],
+  代理: ['proxy', 'vpn', 'tunnel'],
+  网络: ['network', 'dns', 'socket'],
+  路由: ['proxy', 'network', 'vpn', 'route'],
+  模型: ['model', 'llm', 'infer', 'agent'],
+  推理: ['model', 'llm', 'infer', 'agent'],
+  智能体: ['model', 'llm', 'infer', 'agent'],
+  通知: ['notif', 'alert'],
+  提醒我: ['notif', 'alert'],
+  天气: ['weather'],
+  地图: ['map', 'geo'],
+  导航: ['map', 'geo'],
+  游戏: ['game'],
+  相机: ['camera', 'photo'],
+  拍照: ['camera', 'photo'],
+  终端: ['terminal', 'shell', 'cli'],
+  命令行: ['terminal', 'shell', 'cli'],
+  数据库: ['database', 'sql', 'sqlite', 'postgres'],
+  聊天: ['chat', 'conversation'],
+  对话: ['chat', 'conversation'],
+  花: ['cost', 'budget', 'spend', 'quota'],
+  花钱: ['cost', 'budget', 'spend', 'quota'],
+  额度: ['cost', 'budget', 'spend', 'quota'],
+  记住: ['memory', 'persist', 'long-term'],
+  长期: ['memory', 'persist', 'long-term']
+}
 
 /** Badge tones that make official/verified rows read differently from the rest. */
 const TIER_BADGE_VARIANT = {
@@ -188,6 +283,25 @@ const MESSAGES = {
     showMore: n => `Show ${n} more`,
     localSource: 'Installed outside the catalog',
     openRepo: 'Open the repository',
+    details: 'Details',
+    hideDetails: 'Hide details',
+    ver: 'Version',
+    platformsLabel: 'Platforms',
+    maintainerLabel: 'Maintainer',
+    installCommandLabel: 'Install command',
+    copyCommand: 'Copy command',
+    envLabel: 'Required environment',
+    envHint: 'The plugin may fail to start until these are set.',
+    toolsLabel: 'Tools',
+    hooksLabel: 'Hooks',
+    middlewareLabel: 'Middleware',
+    screenshotsLabel: 'Screenshots',
+    readmeLink: 'README',
+    repoLink: 'Repository',
+    docsLink: 'Docs',
+    noDetails: 'No extra details for this entry.',
+    searchNoResult: 'No matches',
+    searchTip: "Try the plugin's English name, or translate the blurbs first.",
     targetLang: 'Translate into',
     autoLang: 'Follow the app language',
     failed: message => `Translation failed: ${message}`,
@@ -304,6 +418,25 @@ const MESSAGES = {
     showMore: n => `再显示 ${n} 条`,
     localSource: '不在目录里（从 Git 等处装的）',
     openRepo: '打开源码仓库',
+    details: '详情',
+    hideDetails: '收起详情',
+    ver: '版本',
+    platformsLabel: '平台',
+    maintainerLabel: '维护者',
+    installCommandLabel: '安装命令',
+    copyCommand: '复制命令',
+    envLabel: '需要配置的环境变量',
+    envHint: '未配置的话插件可能启动不了。',
+    toolsLabel: '工具',
+    hooksLabel: '钩子',
+    middlewareLabel: '中间件',
+    screenshotsLabel: '截图',
+    readmeLink: 'README',
+    repoLink: '仓库',
+    docsLink: '文档',
+    noDetails: '这条没有更多详情。',
+    searchNoResult: '没有匹配',
+    searchTip: '试试英文插件名，或先把简介翻译出来再搜。',
     targetLang: '翻译成',
     autoLang: '跟随界面语言',
     failed: message => `翻译失败：${message}`,
@@ -419,6 +552,25 @@ const MESSAGES = {
     showMore: n => `再顯示 ${n} 條`,
     localSource: '不在目錄裡（從 Git 等處安裝）',
     openRepo: '開啟原始碼倉庫',
+    details: '詳情',
+    hideDetails: '收合詳情',
+    ver: '版本',
+    platformsLabel: '平台',
+    maintainerLabel: '維護者',
+    installCommandLabel: '安裝指令',
+    copyCommand: '複製指令',
+    envLabel: '需要設定的環境變數',
+    envHint: '未設定的話外掛可能啟動不了。',
+    toolsLabel: '工具',
+    hooksLabel: '鉤子',
+    middlewareLabel: '中介層',
+    screenshotsLabel: '截圖',
+    readmeLink: 'README',
+    repoLink: '倉庫',
+    docsLink: '文件',
+    noDetails: '這條沒有更多詳情。',
+    searchNoResult: '沒有符合',
+    searchTip: '試試英文外掛名稱，或先把簡介翻譯出來再搜。',
     targetLang: '翻譯成',
     autoLang: '跟隨介面語言',
     failed: message => `翻譯失敗：${message}`,
@@ -525,6 +677,86 @@ function entryMatches(entry, needle, target) {
     (entry.description || '').toLowerCase().includes(needle) ||
     (cache[cacheKey(entry, target)] || '').toLowerCase().includes(needle)
   )
+}
+
+/**
+ * A Chinese needle expands to its English stems; the raw needle stays a plain
+ * substring so English queries and Chinese translations keep matching as
+ * before. Longer keys win ("数据库" must not also fan out through "数据"),
+ * while a partial Chinese needle falls back to the key that contains it.
+ */
+function queryWords(needle) {
+  const keys = Object.keys(CN_SYNONYMS)
+  const contained = keys.filter(cn => needle.includes(cn))
+  const matched = contained.length
+    ? contained.filter(cn => !contained.some(other => other.length > cn.length && other.includes(cn)))
+    : keys.filter(cn => cn.includes(needle))
+  return matched.flatMap(cn => CN_SYNONYMS[cn])
+}
+
+function compileQuery(query) {
+  const needle = String(query || '')
+    .trim()
+    .toLowerCase()
+  if (!needle) return null
+  const words = new Set(queryWords(needle).map(word => word.toLowerCase()))
+  // Short stems must be whole words ("gui" ≠ "guide"); longer stems keep
+  // matching prefixes so "translat" still finds translate/translation.
+  const matchers = [...words].map(word => {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return word.length <= 3
+      ? new RegExp(`(^|[^a-z0-9])${escaped}(?![a-z0-9])`)
+      : new RegExp(`(^|[^a-z0-9])${escaped}`)
+  })
+  return {
+    needle,
+    matches(text) {
+      const hay = String(text || '').toLowerCase()
+      if (!hay) return false
+      if (hay.includes(needle)) return true
+      return matchers.some(re => re.test(hay))
+    }
+  }
+}
+
+/**
+ * Per-entry lowercase fields, kept apart so relevance can tell a name hit
+ * (3) from a blurb/translation hit (2) from a metadata hit (1).
+ */
+function buildFields(entry, target, t) {
+  const caps = entry.capabilities || {}
+  const tier = entry.tier || 'community'
+  return {
+    name: String(entry.name || '').toLowerCase(),
+    description: [entry.description, cache[cacheKey(entry, target)]]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase(),
+    extra: [
+      entry.category,
+      entry.category ? categoryLabel(t, entry.category) : '',
+      tier,
+      t(`tier.${tier}`),
+      entry.maintainer,
+      entry.version,
+      entry.platforms,
+      caps.providesTools,
+      caps.providesHooks
+    ]
+      .flat()
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+  }
+}
+
+/** 3: name, 2: description/translation, 1: other fields, 0: no hit. */
+function scoreFields(fields, compiled) {
+  if (!fields) return 0
+  if (compiled.matches(fields.name)) return 3
+  if (compiled.matches(fields.description)) return 2
+  if (compiled.matches(fields.extra)) return 1
+  return 0
 }
 
 function toolsOf(entry) {
@@ -711,6 +943,200 @@ function parseBatch(text, expected) {
 }
 
 // ---------------------------------------------------------------------------
+// card details
+// ---------------------------------------------------------------------------
+
+/** A labelled row that simply doesn't exist when the field is empty. */
+function detailRow(label, value, key) {
+  return jsxs(
+    'div',
+    {
+      className: 'flex min-w-0 gap-2',
+      children: [
+        label
+          ? jsx('span', { className: 'w-24 shrink-0 text-(--ui-text-tertiary)', children: label })
+          : null,
+        jsx('div', { className: 'min-w-0 flex-1 break-words', children: value })
+      ]
+    },
+    key || label
+  )
+}
+
+/**
+ * Inline expansion of one card. Every field is conditional: the catalog has
+ * gaps (only 670/800 versions, 144/800 platforms, …), and an empty row would
+ * just be noise. `readme` is a boolean flag, not text — hence a link only.
+ */
+function DetailPanel({ entry, t }) {
+  const caps = entry.capabilities || {}
+  const env = Array.isArray(caps.requiresEnv) ? caps.requiresEnv : []
+  const tools = Array.isArray(caps.providesTools) ? caps.providesTools : []
+  const hooks = Array.isArray(caps.providesHooks) ? caps.providesHooks : []
+  const middleware = Array.isArray(caps.providesMiddleware) ? caps.providesMiddleware : []
+  const platforms = Array.isArray(entry.platforms) ? entry.platforms : []
+  const screenshots =
+    Array.isArray(entry.screenshots) && entry.screenshots.length
+      ? entry.screenshots.slice(0, 3)
+      : entry.image
+        ? [entry.image]
+        : []
+  // GitHub raw is frequently unreachable from China; a broken thumbnail is
+  // worse than no thumbnail, so each failure removes just that image.
+  const [failedShots, setFailedShots] = useState(() => new Set())
+  const visibleShots = screenshots.filter(url => !failedShots.has(url))
+
+  const rows = []
+  if (entry.version) rows.push(detailRow(t('ver'), entry.version, 'version'))
+  if (platforms.length) rows.push(detailRow(t('platformsLabel'), platforms.join(', '), 'platforms'))
+  if (entry.maintainer) {
+    rows.push(
+      detailRow(
+        t('maintainerLabel'),
+        entry.maintainerSlug
+          ? jsx('button', {
+              type: 'button',
+              onClick: () =>
+                openExternal(`https://github.com/${entry.maintainerSlug}`, t('openFailed')),
+              className: 'cursor-pointer underline-offset-4 hover:underline',
+              children: entry.maintainer
+            })
+          : entry.maintainer,
+        'maintainer'
+      )
+    )
+  }
+  if (entry.installCommand) {
+    rows.push(
+      detailRow(
+        t('installCommandLabel'),
+        jsxs('div', {
+          className: 'flex min-w-0 items-center gap-2',
+          children: [
+            jsx('code', {
+              className: 'min-w-0 flex-1 truncate font-mono text-xs',
+              children: entry.installCommand
+            }),
+            jsx(CopyButton, {
+              appearance: 'inline',
+              text: entry.installCommand,
+              label: t('copyCommand')
+            })
+          ]
+        }),
+        'command'
+      )
+    )
+  }
+  if (env.length) {
+    rows.push(
+      detailRow(
+        t('envLabel'),
+        jsxs('div', {
+          className: 'flex flex-wrap items-center gap-1.5',
+          children: [
+            ...env.map(name =>
+              jsx(Badge, { variant: 'warn', size: 'xs', children: name }, name)
+            ),
+            jsx('span', {
+              className: 'text-(--ui-text-tertiary)',
+              children: t('envHint')
+            })
+          ]
+        }),
+        'env'
+      )
+    )
+  }
+  if (tools.length) {
+    const shown = tools.slice(0, 8).join(', ')
+    rows.push(
+      detailRow(
+        t('toolsLabel'),
+        tools.length > 8 ? `${shown} +${tools.length - 8}` : shown,
+        'tools'
+      )
+    )
+  }
+  if (hooks.length) rows.push(detailRow(t('hooksLabel'), String(hooks.length), 'hooks'))
+  if (middleware.length) {
+    rows.push(detailRow(t('middlewareLabel'), String(middleware.length), 'middleware'))
+  }
+
+  const links = [
+    entry.readmeUrl ? { url: entry.readmeUrl, label: t('readmeLink') } : null,
+    entry.repo ? { url: entry.repo, label: t('repoLink') } : null,
+    entry.docsUrl ? { url: entry.docsUrl, label: t('docsLink') } : null
+  ].filter(Boolean)
+
+  const hasContent = rows.length || visibleShots.length || links.length
+
+  return jsxs('div', {
+    className: 'mt-2 flex flex-col gap-1.5 border-t border-(--ui-border) pt-2 text-xs',
+    children: [
+      ...rows,
+      visibleShots.length
+        ? detailRow(
+            t('screenshotsLabel'),
+            jsx('div', {
+              className: 'flex flex-wrap gap-2',
+              children: visibleShots.map(url =>
+                jsx(
+                  'img',
+                  {
+                    src: url,
+                    alt: '',
+                    loading: 'lazy',
+                    className:
+                      'h-24 w-auto cursor-pointer rounded border border-(--ui-border) object-cover',
+                    onClick: () => openExternal(url, t('openFailed')),
+                    onError: () =>
+                      setFailedShots(prev => {
+                        const next = new Set(prev)
+                        next.add(url)
+                        return next
+                      })
+                  },
+                  url
+                )
+              )
+            }),
+            'screenshots'
+          )
+        : null,
+      links.length
+        ? detailRow(
+            '',
+            jsx('div', {
+              className: 'flex flex-wrap gap-3',
+              children: links.map(link =>
+                jsx(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => openExternal(link.url, t('openFailed')),
+                    className:
+                      'cursor-pointer underline-offset-4 hover:underline hover:text-(--ui-text-primary)',
+                    children: link.label
+                  },
+                  link.url
+                )
+              )
+            }),
+            'links'
+          )
+        : null,
+      hasContent
+        ? null
+        : jsx('div', {
+            className: 'text-(--ui-text-tertiary)',
+            children: t('noDetails')
+          })
+    ]
+  })
+}
+
+// ---------------------------------------------------------------------------
 // page
 // ---------------------------------------------------------------------------
 
@@ -743,6 +1169,8 @@ function CatalogPage() {
   const [hermesVersion, setHermesVersion] = useState('')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const [updatingName, setUpdatingName] = useState('')
+  /** Single value, so opening one card's details closes the previous one. */
+  const [openName, setOpenName] = useState('')
   const bulkRef = useRef(null)
 
   const resolvedTarget = useMemo(() => {
@@ -957,29 +1385,49 @@ function CatalogPage() {
     sourceFilter
   ])
 
+  /** Rebuilt when translations land (`tick`) so a translated blurb is searchable. */
+  const fieldsByEntry = useMemo(() => {
+    const map = new Map()
+    for (const entry of entries) map.set(entry.name, buildFields(entry, resolvedTarget, t))
+    return map
+  }, [entries, resolvedTarget, tick, t])
+
+  const compiledQuery = useMemo(() => compileQuery(query), [query])
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const active = SORTS.find(s => s.id === sort) || SORTS[0]
-    const base = entries
-      .filter(entry => {
-        if (!category) return true
+    const base = []
+    for (const entry of entries) {
+      if (category) {
         const slug = entry.category || ''
-        return category === '__none' ? slug === '' : slug === category
-      })
-      .filter(entry =>
-        onlyInstalled
-          ? (Boolean(installedByName.get(entry.name)) || desktopHalves.has(entry.name)) &&
-            rowMatchesSource(installedByName.get(entry.name))
-          : true
-      )
-      .filter(entry => entryMatches(entry, needle, resolvedTarget))
-      .sort((a, b) => active.cmp(a, b) || (b.stars || 0) - (a.stars || 0))
+        if (category === '__none' ? slug !== '' : slug !== category) continue
+      }
+      if (
+        onlyInstalled &&
+        !(
+          (Boolean(installedByName.get(entry.name)) || desktopHalves.has(entry.name)) &&
+          rowMatchesSource(installedByName.get(entry.name))
+        )
+      ) {
+        continue
+      }
+      const score = compiledQuery ? scoreFields(fieldsByEntry.get(entry.name), compiledQuery) : 0
+      if (compiledQuery && score === 0) continue
+      base.push({ ...entry, score })
+    }
+    base.sort(
+      (a, b) =>
+        b.score - a.score || active.cmp(a, b) || (b.stars || 0) - (a.stars || 0)
+    )
+    // Local rows have no catalog fields; the original three-field match stands.
     const locals = localRows.filter(entry => entryMatches(entry, needle, resolvedTarget))
     // `tick` re-sorts after a translation lands so search-visible state stays true.
     return locals.length ? [...base, ...locals] : base
   }, [
     entries,
     query,
+    compiledQuery,
     category,
     sort,
     resolvedTarget,
@@ -989,6 +1437,7 @@ function CatalogPage() {
     desktopHalves,
     rowMatchesSource,
     localRows,
+    fieldsByEntry,
     tick
   ])
 
@@ -1611,7 +2060,12 @@ function CatalogPage() {
               className: 'flex items-center gap-2 py-12 text-sm text-(--ui-text-tertiary)',
               children: [jsx(GlyphSpinner, {}), t('loading')]
             })
-          : jsx(ScrollArea, {
+          : !filtered.length
+            ? jsx(EmptyState, {
+                title: t('searchNoResult'),
+                description: t('searchTip')
+              })
+            : jsx(ScrollArea, {
               className: 'min-h-0 flex-1',
               children: jsxs('div', {
                 className: 'flex flex-col gap-2 pr-2',
@@ -1636,6 +2090,7 @@ function CatalogPage() {
                   const versionOk =
                     !entry.requiresHermes || satisfies(entry.requiresHermes, hermesVersion)
                   const versionWarn = versionKnown && !versionOk
+                  const isOpen = openName === entry.name
                   return jsxs(
                     'div',
                     {
@@ -1741,6 +2196,25 @@ function CatalogPage() {
                                 })
                               : null,
                             jsx('div', { className: 'flex-1' }),
+                            entry.local
+                              ? null
+                              : jsx(Button, {
+                                  size: 'xs',
+                                  variant: 'ghost',
+                                  type: 'button',
+                                  'aria-expanded': isOpen,
+                                  onClick: () => {
+                                    haptic('tap')
+                                    setOpenName(prev => (prev === entry.name ? '' : entry.name))
+                                  },
+                                  children: jsxs('span', {
+                                    className: 'inline-flex items-center gap-1',
+                                    children: [
+                                      jsx(DisclosureCaret, { open: isOpen }),
+                                      isOpen ? t('hideDetails') : t('details')
+                                    ]
+                                  })
+                                }),
                             blurb
                               ? null
                               : jsx(Button, {
@@ -1847,6 +2321,9 @@ function CatalogPage() {
                           className: 'mt-1 text-sm leading-relaxed',
                           children: blurb || entry.description || ''
                         }),
+                        isOpen
+                          ? jsx(DetailPanel, { entry, t })
+                          : null,
                         showsDesktopHalf
                           ? jsx('div', {
                               className: 'mt-1.5',

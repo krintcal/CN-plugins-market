@@ -9,6 +9,8 @@ The curated catalog is written in English. This plugin adds a catalog page to He
 ## Features
 
 - **A real ranking.** Sort the catalog by **most starred**, **recently updated**, **newly listed**, or **most capable** (tools + hooks), with the rank number on every card. Ranking, category and target language are compact dropdowns on one line, plus a search box that also matches the translation once you have one.
+- **Open a card for the details.** Every card has a `Details` toggle; one card is open at a time, in place, without moving the list. It shows only the fields that exist: version, platforms, maintainer (clickable when there's a GitHub slug), the install command with a copy button, required env vars, tool names (first 8, then `+N`), hook/middleware counts, up to three screenshots, and README / repository / docs links. The catalog's `readme` field is a boolean flag, not text, so the panel links to it instead of inventing a reader. Thumbnails that fail to load hide themselves, and the block disappears entirely if all of them fail — GitHub raw is often unreachable from China.
+- **Search in Chinese.** Typing `记忆`, `语音`, `图片`, `代理` and the like used to find almost nothing because only 11 of 800 descriptions contain Chinese. A local synonym table maps 83 Chinese intents onto English catalog keywords, and the search scans name, description, translation, category, tier, maintainer, version, platforms, tools and hooks. No model call, no extra network — with an empty-state hint when nothing matches.
 - **One-click install.** Same backend path as the built-in catalog page (`plugins.manage`), so installed state stays in sync across the app.
 - **One-click upgrade.** Catalog installs that have moved to a newer pinned revision show an **Update available** badge and an **Update** button; the tooltip shows the installed and catalog revisions side by side. Non-catalog installs are told to use `hermes plugins update <name>` instead of retrying a dead end.
 - **Version requirements are visible.** Each card shows the Hermes version an entry needs. When your app is older, the label and the Install button switch to a warning tone and explain that the plugin will be skipped at load, so a silent no-show is no longer a mystery.
@@ -25,6 +27,8 @@ The curated catalog is written in English. This plugin adds a catalog page to He
 ## 功能
 
 - **真的排行**：按**最受欢迎 / 最近更新 / 新上榜 / 功能最多**（工具＋钩子）排序，每张卡带名次；排行口径、分类、目标语言都是一个紧凑下拉，跟搜索框一起占一行。
+- **卡片能展开看详情**：每张卡多一个「详情」按钮，同一时间只展开一条，就地展开、不打乱滚动位置。只显示真实存在的字段：版本、平台、维护者（有 GitHub slug 就能点进去）、安装命令（带复制按钮）、需要配置的环境变量、工具名（最多 8 个，其余 `+N`）、钩子/中间件数量、最多 3 张截图，以及 README / 仓库 / 文档链接。目录里的 `readme` 只是布尔标记不是正文，所以只给链接；缩略图加载失败会自己隐藏，全失败就整块不显示（GitHub raw 在国内常被墙）。
+- **中文检索**：输「记忆」「语音」「图片」「代理」这类词以前几乎搜不到——800 条里只有 11 条简介含中文。现在用一张本地词表把 83 个中文意图映射成英文关键词，检索范围覆盖名称、简介、译文、分类、档位、维护者、版本、平台、工具与钩子；不调模型、不额外联网，搜不到时给一句「试试英文插件名，或先把简介翻译出来再搜」。
 - **一键安装**：走和官方目录页同一个后端接口（`plugins.manage`），安装状态全 App 同步。
 - **一键升级**：从目录装的条目一旦有新的 pin，就显示「可升级」徽标和「升级」按钮；Tip 里并排给出已装版本和目录最新版的短 SHA。不是从目录装的包不会被反复重试，而是提示改用 `hermes plugins update <名>`。
 - **版本门槛看得见**：每张卡标出需要的 Hermes 版本；本机版本偏低时文案和「安装」按钮都变成警示样式，并说明「装了也会在加载时被跳过」，不再出现装了却毫无反应的哑谜。
