@@ -781,6 +781,13 @@ function scoreFields(fields, compiled) {
   return 0
 }
 
+/** `36509` → `36.5k`, so a star count never eats the header. */
+function formatStars(value) {
+  const n = Number(value) || 0
+  if (n < 1000) return String(n)
+  return `${Math.round(n / 100) / 10}k`
+}
+
 function toolsOf(entry) {
   const caps = entry.capabilities || {}
   const tools = caps.providesTools ? caps.providesTools.length : 0
@@ -2217,9 +2224,15 @@ function CatalogPage() {
                   // take the user to it (see `desktopHalfHint`).
                   const showsDesktopHalf =
                     Boolean(row && row.has_desktop_half) || (!row && hasDesktopHalf)
-                  const isSelected = selected.has(entry.name)
                   const busy = busyName === entry.name
-                  const toolCount = toolsOf(entry)
+                  const isSelected = selected.has(entry.name)
+                  // Header keeps ONE date; the tooltip carries both so nothing is lost.
+                  const updatedText = entry.updatedAt
+                    ? t('updatedAgo', agoText(t, entry.updatedAt))
+                    : ''
+                  const addedText = entry.addedAt ? t('addedAgo', agoText(t, entry.addedAt)) : ''
+                  const primaryDate = updatedText || addedText
+                  const dateTip = [updatedText, addedText].filter(Boolean).join(' · ')
                   const updating = updatingName === entry.name
                   const canUpdate = Boolean(row && row.update_available === true)
                   const versionKnown = Boolean(hermesVersion)
@@ -2316,26 +2329,19 @@ function CatalogPage() {
                                 }),
                             entry.stars
                               ? jsx('span', {
-                                  className: 'text-xs text-(--ui-text-tertiary)',
-                                  children: `★${entry.stars}`
+                                  className: 'text-xs tabular-nums text-(--ui-text-tertiary)',
+                                  children: `★${formatStars(entry.stars)}`
                                 })
                               : null,
-                            entry.updatedAt
-                              ? jsx('span', {
-                                  className: 'text-xs text-(--ui-text-tertiary)',
-                                  children: t('updatedAgo', agoText(t, entry.updatedAt))
-                                })
-                              : null,
-                            entry.addedAt
-                              ? jsx('span', {
-                                  className: 'text-xs text-(--ui-text-tertiary)',
-                                  children: t('addedAgo', agoText(t, entry.addedAt))
-                                })
-                              : null,
-                            toolCount
-                              ? jsx('span', {
-                                  className: 'text-xs text-(--ui-text-tertiary)',
-                                  children: t('tools', toolCount)
+                            // One date, not two: the newest one is the signal the
+                            // user scans for; both stay available in the tooltip.
+                            primaryDate
+                              ? jsx(Tip, {
+                                  label: dateTip,
+                                  children: jsx('span', {
+                                    className: 'text-xs text-(--ui-text-tertiary)',
+                                    children: primaryDate
+                                  })
                                 })
                               : null,
                             jsx('div', { className: 'flex-1' }),
@@ -2452,7 +2458,7 @@ function CatalogPage() {
                                   })
                                 : jsx(Button, {
                                     size: 'xs',
-                                    variant: 'secondary',
+                                    variant: 'default',
                                     type: 'button',
                                     disabled: busy,
                                     onClick: () => installEntry(entry),
