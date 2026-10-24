@@ -266,6 +266,10 @@ const MESSAGES = {
       "Desktop halves are toggled in the app's own Plugins tab — a plugin can only take you there.",
     desktopHalfAction: 'Open its desktop half',
     onlyInstalled: n => `Installed only (${n})`,
+    onlyInstallable: n => `Runs here (${n})`,
+    noConfigNeeded: n => `No setup (${n})`,
+    installableTip: 'This Hermes version and this OS can actually load it',
+    noConfigTip: 'Needs no environment variables — install and go',
     uninstall: 'Uninstall',
     uninstallTitle: name => `Uninstall ${name}?`,
     uninstallBody: name =>
@@ -404,6 +408,10 @@ const MESSAGES = {
     desktopHalfHint: '桌面半边由 App 自己管，插件只能带你过去 —— 到「技能与工具 → 插件」里开关。',
     desktopHalfAction: '去开桌面半边',
     onlyInstalled: n => `只看已安装 ${n}`,
+    onlyInstallable: n => `能装的 ${n}`,
+    noConfigNeeded: n => `免配置 ${n}`,
+    installableTip: '当前 Hermes 版本和系统真的能加载它',
+    noConfigTip: '不需要配环境变量，装上就能用',
     uninstall: '卸载',
     uninstallTitle: name => `卸载 ${name}？`,
     uninstallBody: name => `会把这个插件的文件从当前 profile 里删掉，带桌面半边的连桌面那份一起删。以后随时可以从目录或 Git 重新装上。`,
@@ -539,6 +547,10 @@ const MESSAGES = {
     desktopHalfHint: '桌面半邊由 App 自己管，外掛只能帶你過去 —— 到「技能與工具 → 外掛」裡開關。',
     desktopHalfAction: '去開桌面半邊',
     onlyInstalled: n => `只看已安裝 ${n}`,
+    onlyInstallable: n => `能裝的 ${n}`,
+    noConfigNeeded: n => `免設定 ${n}`,
+    installableTip: '目前 Hermes 版本和系統真的能載入它',
+    noConfigTip: '不需要設定環境變數，裝上就能用',
     uninstall: '卸載',
     uninstallTitle: name => `卸載 ${name}？`,
     uninstallBody: name => `會把這個外掛的檔案從目前 profile 刪掉，帶桌面半邊的連桌面那份一起刪。之後隨時可以從目錄或 Git 重新安裝。`,
@@ -802,6 +814,33 @@ function satisfies(required, current) {
     if (got < want) return false
   }
   return true
+}
+
+/** The app reports `win32`; the catalog spells it `windows`. */
+const PLATFORM_ALIAS = { win32: 'windows', darwin: 'macos', linux: 'linux' }
+
+/**
+ * Can this entry actually run here? `requiresHermes` is checked at load time and
+ * silently skips a plugin, and the catalog leaves `platforms` empty when a
+ * plugin is OS-agnostic — so both have to be evaluated locally. Unknown inputs
+ * never exclude anything: a filter that hides things on a guess is worse than
+ * one that shows a bit too much.
+ */
+function isInstallable(entry, version, platform) {
+  if (version && entry.requiresHermes && !satisfies(entry.requiresHermes, version)) return false
+  const want = PLATFORM_ALIAS[platform] || platform || ''
+  const platforms = Array.isArray(entry.platforms) ? entry.platforms : []
+  if (want && platforms.length) {
+    const needle = want.toLowerCase()
+    if (!platforms.some(name => String(name || '').toLowerCase().includes(needle))) return false
+  }
+  return true
+}
+
+/** Nothing to configure before it works. */
+function needsNoConfig(entry) {
+  const env = (entry.capabilities || {}).requiresEnv
+  return !Array.isArray(env) || env.length === 0
 }
 
 /**
@@ -1194,6 +1233,9 @@ function CatalogPage() {
   /** Desktop halves on disk (`<plugins root>/<name>`) — invisible to the agent list. */
   const [desktopHalves, setDesktopHalves] = useState(() => new Set())
   const [onlyInstalled, setOnlyInstalled] = useState(false)
+  /** Two practical filters: it runs here, and it runs without configuration. */
+  const [installableOnly, setInstallableOnly] = useState(false)
+  const [noEnvOnly, setNoEnvOnly] = useState(false)
   const [sourceFilter, setSourceFilter] = useState('user')
   const [pendingRemove, setPendingRemove] = useState(null)
   const [pendingBulk, setPendingBulk] = useState(null)
@@ -1204,6 +1246,8 @@ function CatalogPage() {
   const [tick, setTick] = useState(0)
   /** Unknown when the bridge or its preload is older than 0.21.2. */
   const [hermesVersion, setHermesVersion] = useState('')
+  /** `win32` / `darwin` / `linux`; empty when the bridge can't tell us. */
+  const [hermesPlatform, setHermesPlatform] = useState('')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const [updatingName, setUpdatingName] = useState('')
   /** Single value, so opening one card's details closes the previous one. */
@@ -1275,7 +1319,9 @@ function CatalogPage() {
         if (!bridge || typeof bridge.getVersion !== 'function') return
         const info = await bridge.getVersion()
         const version = info && info.appVersion
+        const platform = info && info.platform
         if (alive && typeof version === 'string' && versionParts(version)) setHermesVersion(version)
+        if (alive && typeof platform === 'string' && platform) setHermesPlatform(platform)
       } catch {
         /* version stays unknown — cards then never warn */
       }
@@ -1289,7 +1335,7 @@ function CatalogPage() {
   /** Any filter change starts the list over at the first page. */
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
-  }, [query, category, sort, onlyInstalled, sourceFilter])
+  }, [query, category, sort, onlyInstalled, sourceFilter, installableOnly, noEnvOnly])
 
   /**
    * The app's own plugin folder. A package can ship a desktop half with no agent
@@ -1391,6 +1437,13 @@ function CatalogPage() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1])
   }, [entries])
 
+  /** How many entries survive each practical filter, for the chip labels. */
+  const installableCount = useMemo(
+    () => entries.filter(entry => isInstallable(entry, hermesVersion, hermesPlatform)).length,
+    [entries, hermesVersion, hermesPlatform]
+  )
+  const noConfigCount = useMemo(() => entries.filter(needsNoConfig).length, [entries])
+
   /** Installed plugins the catalog doesn't list (Git installs, bundled, desktop-only). */
   const localRows = useMemo(() => {
     if (!onlyInstalled) return []
@@ -1451,6 +1504,8 @@ function CatalogPage() {
       ) {
         continue
       }
+      if (installableOnly && !isInstallable(entry, hermesVersion, hermesPlatform)) continue
+      if (noEnvOnly && !needsNoConfig(entry)) continue
       const score = compiledQuery ? scoreFields(fieldsByEntry.get(entry.name), compiledQuery) : 0
       if (compiledQuery && score === 0) continue
       base.push({ ...entry, score })
@@ -1477,6 +1532,10 @@ function CatalogPage() {
     rowMatchesSource,
     localRows,
     fieldsByEntry,
+    installableOnly,
+    noEnvOnly,
+    hermesVersion,
+    hermesPlatform,
     tick
   ])
 
@@ -1973,6 +2032,34 @@ function CatalogPage() {
               onlyInstalled ? 'bg-(--ui-bg-quaternary) font-medium' : 'text-(--ui-text-tertiary)'
             ),
             children: t('onlyInstalled', onlyInstalled ? installedCount : installedCounts.user)
+          }),
+          jsx(Tip, {
+            label: t('installableTip'),
+            children: jsx('button', {
+              type: 'button',
+              onClick: () => setInstallableOnly(value => !value),
+              'aria-pressed': installableOnly,
+              className: cn(
+                'rounded px-2 py-0.5',
+                installableOnly
+                  ? 'bg-(--ui-bg-quaternary) font-medium'
+                  : 'text-(--ui-text-tertiary)'
+              ),
+              children: t('onlyInstallable', installableCount)
+            })
+          }),
+          jsx(Tip, {
+            label: t('noConfigTip'),
+            children: jsx('button', {
+              type: 'button',
+              onClick: () => setNoEnvOnly(value => !value),
+              'aria-pressed': noEnvOnly,
+              className: cn(
+                'rounded px-2 py-0.5',
+                noEnvOnly ? 'bg-(--ui-bg-quaternary) font-medium' : 'text-(--ui-text-tertiary)'
+              ),
+              children: t('noConfigNeeded', noConfigCount)
+            })
           }),
           onlyInstalled
             ? jsxs('div', {
