@@ -1812,20 +1812,40 @@ function CatalogPage() {
         return { errors, removedAgent, removedDesktop }
       }
 
+      // 0.22.5 has a real `remove` action (same core as the CLI). Older backends
+      // answer 4017 — only those fall back to running the CLI, so the common path
+      // needs no shell at all.
       try {
+        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
         const res = await host.request(
-          'shell.exec',
-          { command: `hermes plugins remove ${name}` },
+          'plugins.manage',
+          { action: 'remove', name, ...(profile ? { profile } : {}) },
           180000
         )
-        if (res && res.code === 0) removedAgent = true
-        else {
-          // The gateway's PATH may not include a local dev CLI; surface its
-          // stderr instead of pretending the removal silently failed.
-          errors.push(`agent: ${(res && (res.stderr || res.stdout)) || 'remove failed'}`)
-        }
+        if (res && res.ok) removedAgent = true
+        else errors.push(`agent: ${(res && res.error) || 'remove rejected'}`)
       } catch (e) {
-        errors.push(`agent: ${(e && e.message) || e}`)
+        const code = e && e.code
+        const message = String((e && e.message) || e)
+        if (code === 4017 || message.includes('unknown plugins action')) {
+          try {
+            const res = await host.request(
+              'shell.exec',
+              { command: `hermes plugins remove ${name}` },
+              180000
+            )
+            if (res && res.code === 0) removedAgent = true
+            else {
+              // The gateway's PATH may not include a local dev CLI; surface its
+              // stderr instead of pretending the removal silently failed.
+              errors.push(`agent: ${(res && (res.stderr || res.stdout)) || 'remove failed'}`)
+            }
+          } catch (fallbackError) {
+            errors.push(`agent: ${(fallbackError && fallbackError.message) || fallbackError}`)
+          }
+        } else {
+          errors.push(`agent: ${message}`)
+        }
       }
 
       const bridge = typeof window !== 'undefined' ? window.hermesDesktop : undefined
@@ -2412,8 +2432,8 @@ function CatalogPage() {
                                       ? jsx(Tip, {
                                           label: t(
                                             'updateTip',
-                                            shortSha(row.installed_sha),
-                                            shortSha(row.catalog_sha)
+                                            row.version || shortSha(row.installed_sha),
+                                            row.catalog_version || shortSha(row.catalog_sha)
                                           ),
                                           children: jsx(Button, {
                                             size: 'xs',
@@ -2621,13 +2641,12 @@ export default {
     })
 
     syncNavLabel(ctx)
-    // `ctx.i18n.onLocaleChange` is 0.21.5+; guard it so an older desktop shell
-    // still loads (the label is then kept fresh by the retries and by the page).
+    // 0.22+ has `onLocaleChange`, which covers language switches. The one delayed
+    // retry stays for the first paint: `register()` can run before the app has
+    // hydrated `display.language`, and then the label came out English.
     if (typeof ctx.i18n.onLocaleChange === 'function') {
       ctx.i18n.onLocaleChange(() => syncNavLabel(ctx))
     }
-    for (const delay of [200, 800, 2000]) {
-      setTimeout(() => syncNavLabel(ctx), delay)
-    }
+    setTimeout(() => syncNavLabel(ctx), 400)
   }
 }

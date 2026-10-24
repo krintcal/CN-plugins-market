@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.8 — 2026-10-24
+
+- **卸载改走原生 RPC。** 1.1.0 时后端没有 `remove`，只能用 `shell.exec` 调 CLI 兜底；0.22.5 的 `plugins.manage` 补上了 `remove`（和 `hermes plugins remove` 同一个核心函数 `dashboard_remove_user_plugin`）。现在优先发 `{action:'remove', name}`，只有后端回 `4017 unknown plugins action`（老版本）才退回 CLI。常见路径不再需要 shell，也不依赖 gateway 的 PATH。
+- **升级提示显示版本号。** 0.22.5 的 list 行新增了 `catalog_version`，Tip 里从「两截短 SHA」改成「已装版本 → 目录版本」（拿不到版本时才退回 SHA）。
+- **侧栏文案的重试收成一次。** 之前为 0.21.2（没有 `onLocaleChange`）打了 200/800/2000ms 三次重试；0.22.5 已经有该钩子，只保留注册后 400ms 的那一次，用来等 `display.language` 完成 hydrate。
+
 ## 1.2.7 — 2026-10-24
 
 - **卡片顶部减负。** 原来一行塞了六项一样重的灰字（档位/分类/星数/更新于/首次收录于/工具数），扫不动。现在：星数缩成 `36.5k`（`formatStars`，四位以上才截断），两个日期合成一个——有 `updatedAt` 就显示「更新于 X」，否则退回「首次收录于 X」，两个都在 Tip 里；「工具 N」只在详情里出现（那里本来就有工具名列表）。

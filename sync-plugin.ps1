@@ -28,7 +28,20 @@ $source     = Join-Path $PSScriptRoot 'desktop\plugin.js'
 if (-not (Test-Path $source)) { throw "missing source: $source" }
 
 New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir 'plugin.js') -Force
+$targetFile = Join-Path $targetDir 'plugin.js'
+Copy-Item -LiteralPath $source -Destination $targetFile -Force
+
+# Hermes 0.22 "adopts" a marker-less folder whose plugin.js is BYTE-IDENTICAL to
+# an installed package's desktop half: it stamps `.hermes-package.json` in place,
+# which makes the plugin opt-in (hidden from the sidebar until toggled). A copy
+# that differs by even one line is left alone as a standalone plugin and stays
+# enabled by default - hence this sentinel. It is also the reason the two files
+# are NOT sha-identical any more.
+$sentinel = '// synced copy of desktop/plugin.js - this line keeps it byte-different from the package half so Hermes keeps it standalone (enabled by default).'
+$lines = Get-Content -LiteralPath $targetFile
+if ($lines -notcontains $sentinel) {
+  Add-Content -LiteralPath $targetFile -Value $sentinel
+}
 
 $marker = Join-Path $targetDir '.hermes-package.json'
 if (Test-Path $marker) {
@@ -36,7 +49,7 @@ if (Test-Path $marker) {
   Write-Host 'removed .hermes-package.json (marker forces the plugin off by default)'
 }
 
-$hash = (Get-FileHash -LiteralPath (Join-Path $targetDir 'plugin.js') -Algorithm SHA256).Hash
+$hash = (Get-FileHash -LiteralPath $targetFile -Algorithm SHA256).Hash
 Write-Host "synced -> $targetDir"
 Write-Host "sha256  $hash"
 Write-Host 'the app hot-reloads plugin.js on save; the sidebar entry should stay put.'
