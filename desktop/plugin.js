@@ -71,6 +71,14 @@ const SWITCH_CLASS =
   'data-[state=checked]:border-[var(--ui-accent,#2f6fed)] ' +
   'data-[state=checked]:bg-[var(--ui-accent,#2f6fed)]'
 
+/** Card blurbs are a glance, not a paragraph: three lines, full text in Details. */
+const BLURB_CLAMP = {
+  display: '-webkit-box',
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden'
+}
+
 const PREFS_KEY = 'prefs'
 /** Bumped when the cache key shape changes, so stale entries can't be read. */
 const CACHE_KEY = 'translations.v2'
@@ -291,6 +299,7 @@ const MESSAGES = {
     copyCommand: 'Copy command',
     envLabel: 'Required environment',
     envHint: 'The plugin may fail to start until these are set.',
+    descriptionLabel: 'Blurb',
     toolsLabel: 'Tools',
     hooksLabel: 'Hooks',
     middlewareLabel: 'Middleware',
@@ -426,6 +435,7 @@ const MESSAGES = {
     copyCommand: '复制命令',
     envLabel: '需要配置的环境变量',
     envHint: '未配置的话插件可能启动不了。',
+    descriptionLabel: '简介',
     toolsLabel: '工具',
     hooksLabel: '钩子',
     middlewareLabel: '中间件',
@@ -560,6 +570,7 @@ const MESSAGES = {
     copyCommand: '複製指令',
     envLabel: '需要設定的環境變數',
     envHint: '未設定的話外掛可能啟動不了。',
+    descriptionLabel: '簡介',
     toolsLabel: '工具',
     hooksLabel: '鉤子',
     middlewareLabel: '中介層',
@@ -794,6 +805,16 @@ function satisfies(required, current) {
 }
 
 /**
+ * The catalog stores `>=0.21.4`; the labels already carry the `≥` glyph, so the
+ * raw operator must be stripped before it is interpolated.
+ */
+function prettyRequirement(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^>=?\s*/, '')
+}
+
+/**
  * Cut a long blurb at the nearest sentence end, so a capped preview never stops
  * mid-sentence; with no boundary in range, cut hard and mark the truncation.
  */
@@ -967,7 +988,7 @@ function detailRow(label, value, key) {
  * gaps (only 670/800 versions, 144/800 platforms, …), and an empty row would
  * just be noise. `readme` is a boolean flag, not text — hence a link only.
  */
-function DetailPanel({ entry, t }) {
+function DetailPanel({ entry, blurb, t }) {
   const caps = entry.capabilities || {}
   const env = Array.isArray(caps.requiresEnv) ? caps.requiresEnv : []
   const tools = Array.isArray(caps.providesTools) ? caps.providesTools : []
@@ -986,6 +1007,16 @@ function DetailPanel({ entry, t }) {
   const visibleShots = screenshots.filter(url => !failedShots.has(url))
 
   const rows = []
+  const fullText = blurb || entry.description || ''
+  if (fullText) {
+    rows.push(
+      detailRow(
+        t('descriptionLabel'),
+        jsx('div', { className: 'whitespace-pre-line leading-relaxed', children: fullText }),
+        'blurb'
+      )
+    )
+  }
   if (entry.version) rows.push(detailRow(t('ver'), entry.version, 'version'))
   if (platforms.length) rows.push(detailRow(t('platformsLabel'), platforms.join(', '), 'platforms'))
   if (entry.maintainer) {
@@ -1170,6 +1201,8 @@ function CatalogPage() {
   const [updatingName, setUpdatingName] = useState('')
   /** Single value, so opening one card's details closes the previous one. */
   const [openName, setOpenName] = useState('')
+  /** Thumbnails that failed to load; never re-mounted, so no broken-image icons. */
+  const [failedThumbs, setFailedThumbs] = useState(() => new Set())
   const bulkRef = useRef(null)
 
   const resolvedTarget = useMemo(() => {
@@ -1457,6 +1490,15 @@ function CatalogPage() {
       ),
     [selectedEntries, resolvedTarget, tick]
   )
+
+  const markThumbFailed = useCallback(url => {
+    setFailedThumbs(prev => {
+      if (prev.has(url)) return prev
+      const next = new Set(prev)
+      next.add(url)
+      return next
+    })
+  }, [])
 
   const toggleSelected = useCallback(name => {
     haptic('tap')
@@ -2091,6 +2133,10 @@ function CatalogPage() {
                     !entry.requiresHermes || satisfies(entry.requiresHermes, hermesVersion)
                   const versionWarn = versionKnown && !versionOk
                   const isOpen = openName === entry.name
+                  // Screenshot first (it shows the thing working), cover second.
+                  const shot =
+                    (Array.isArray(entry.screenshots) && entry.screenshots[0]) || entry.image || ''
+                  const thumbSrc = shot && !failedThumbs.has(shot) ? shot : ''
                   return jsxs(
                     'div',
                     {
@@ -2148,7 +2194,7 @@ function CatalogPage() {
                               ? jsx(Tip, {
                                   label: versionWarn
                                     ? t('installWillSkip')
-                                    : t('requiresVersion', entry.requiresHermes),
+                                    : t('requiresVersion', prettyRequirement(entry.requiresHermes)),
                                   children: jsx('span', {
                                     className: cn(
                                       'text-xs',
@@ -2157,8 +2203,11 @@ function CatalogPage() {
                                         : 'text-(--ui-text-tertiary)'
                                     ),
                                     children: versionWarn
-                                      ? t('requiresVersionWarn', entry.requiresHermes)
-                                      : t('requiresVersion', entry.requiresHermes)
+                                      ? t(
+                                          'requiresVersionWarn',
+                                          prettyRequirement(entry.requiresHermes)
+                                        )
+                                      : t('requiresVersion', prettyRequirement(entry.requiresHermes))
                                   })
                                 })
                               : null,
@@ -2317,12 +2366,30 @@ function CatalogPage() {
                                   })
                           ]
                         }),
-                        jsx('div', {
-                          className: 'mt-1 break-words text-sm leading-relaxed',
-                          children: blurb || entry.description || ''
+                        jsxs('div', {
+                          className: 'mt-1 flex min-w-0 items-start gap-3',
+                          children: [
+                            thumbSrc
+                              ? jsx('img', {
+                                  src: thumbSrc,
+                                  alt: '',
+                                  loading: 'lazy',
+                                  decoding: 'async',
+                                  className:
+                                    'h-20 w-20 shrink-0 cursor-pointer rounded border border-(--ui-border) object-cover sm:w-32',
+                                  onClick: () => openExternal(thumbSrc, t('openFailed')),
+                                  onError: () => markThumbFailed(thumbSrc)
+                                })
+                              : null,
+                            jsx('div', {
+                              className: 'min-w-0 flex-1 break-words text-sm leading-relaxed',
+                              style: BLURB_CLAMP,
+                              children: blurb || entry.description || ''
+                            })
+                          ]
                         }),
                         isOpen
-                          ? jsx(DetailPanel, { entry, t })
+                          ? jsx(DetailPanel, { entry, blurb, t })
                           : null,
                         showsDesktopHalf
                           ? jsx('div', {

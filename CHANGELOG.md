@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.4 — 2026-10-24
+
+- **卡片上直接显示预览图。** 有截图用第一张，否则用封面（`image`），放在简介左边当缩略图，点开是原图。`raw.githubusercontent.com` 在国内经常拉不动，所以每张图都挂了 `onError`：拉不到就把这张图从卡片上摘掉、只留文字（详情里那 3 张同理），不留破图。卡片是缩略图，详情里仍是原图。
+- **简介默认收成三行。** 之前 1500 字的简介整段摊开，一张卡占满一屏。现在卡片上只给三行（内联 `-webkit-box` clamp，不依赖 Tailwind 的 line-clamp 插件），完整简介挪到详情面板第一行（新增 `descriptionLabel`）；`DetailPanel` 多接一个 `blurb` prop，因此详情里看到的是**翻译后**的全文。
+- **版本要求显示成 `≥`。** 目录里存的是 `>=0.21.4`，文案模板本身已经带 `≥`，两个叠在一起会变成 `≥>=0.21.4`。新增 `prettyRequirement()`，渲染时把前导 `>=` 去掉；数据字段和 `satisfies()` 的判断一个字没动。
+
 ## 1.2.2 — 2026-10-24
 
 - **修卡片横向溢出（真机截图已确认）。** 列表从 SDK 的 `ScrollArea` 换成原生滚动 div：`ScrollArea` 内部把 children 包在 `display: table` 的容器里，而这个容器是 shrink-to-fit、会涨到 `max-content` 宽度，于是 flex 列拿到的是「整段简介一行不换行」的宽度，卡片跟着变宽，正文在窗口内被裁、右侧的译 / 安装 / 详情 / 开关按钮被推到窗口外。换成原生 div 后滚动容器加 `overflow-x-hidden`，卡片根节点加 `min-w-0`，简介加 `break-words`；详情面板的截图行加 `overflow-hidden`、缩略图加 `max-w-full`，header / 筛选栏补 `min-w-0`。只改布局，检索、翻译、安装、升级、卸载、分页逻辑一行没动。
