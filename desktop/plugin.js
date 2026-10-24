@@ -1173,6 +1173,13 @@ function DetailPanel({ entry, blurb, t }) {
 function CatalogPage() {
   const t = usePluginI18n(ID)
   const { locale } = useI18n()
+
+  // The sidebar label is registered outside React and 0.21.2 has no locale-change
+  // hook, so re-sync it whenever the page re-renders for a new app language.
+  useEffect(() => {
+    syncNavLabel(pluginCtx)
+  }, [locale])
+
   const gateway = useValue(host.state.gateway)
 
   const [entries, setEntries] = useState([])
@@ -2473,6 +2480,39 @@ function CatalogPage() {
   })
 }
 
+let navLabel = ''
+let disposeNav = null
+
+/**
+ * (Re-)register the sidebar entry, but only when the resolved label actually
+ * changed. At `register()` time the app has not necessarily hydrated the user's
+ * locale yet, so the first label can come out English while the rest of the app
+ * is Chinese — hence the retries and the page-level nudge below.
+ */
+function syncNavLabel(ctx) {
+  if (!ctx) return
+  let label = ''
+  try {
+    label = ctx.i18n.t('nav')
+  } catch {
+    return
+  }
+  if (!label || (disposeNav && label === navLabel)) return
+  if (disposeNav) {
+    try {
+      disposeNav()
+    } catch {
+      /* an already-disposed entry is not an error */
+    }
+  }
+  navLabel = label
+  disposeNav = ctx.register({
+    id: 'nav',
+    area: SIDEBAR_NAV_AREA,
+    data: { path: PAGE_PATH, label, codicon: 'globe' }
+  })
+}
+
 export default {
   id: ID,
   name: 'Plugin catalog (multilingual)',
@@ -2487,23 +2527,14 @@ export default {
       render: () => jsx(CatalogPage, {})
     })
 
-    // The sidebar label is read once at registration, so re-register it when
-    // the app language changes — otherwise it strands in the old language.
-    const registerNav = () =>
-      ctx.register({
-        id: 'nav',
-        area: SIDEBAR_NAV_AREA,
-        data: { path: PAGE_PATH, label: ctx.i18n.t('nav'), codicon: 'globe' }
-      })
-    let disposeNav = registerNav()
+    syncNavLabel(ctx)
     // `ctx.i18n.onLocaleChange` is 0.21.5+; guard it so an older desktop shell
-    // still loads the page (the nav label then just won't follow a language
-    // switch until the app is updated).
+    // still loads (the label is then kept fresh by the retries and by the page).
     if (typeof ctx.i18n.onLocaleChange === 'function') {
-      ctx.i18n.onLocaleChange(() => {
-        disposeNav()
-        disposeNav = registerNav()
-      })
+      ctx.i18n.onLocaleChange(() => syncNavLabel(ctx))
+    }
+    for (const delay of [200, 800, 2000]) {
+      setTimeout(() => syncNavLabel(ctx), delay)
     }
   }
 }
