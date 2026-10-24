@@ -17,6 +17,7 @@
  * has active.
  */
 import {
+  Badge,
   Button,
   cn,
   ConfirmDialog,
@@ -48,6 +49,10 @@ const CATALOG_TIMEOUT_MS = 30000
 const LLM_TIMEOUT_MS = 240000
 /** Hard cap on ONE entry's blurb text, so a click can't run away. */
 const MAX_CHARS = 1500
+/** First-screen cards; each "show more" adds the same number again. */
+const PAGE_SIZE = 60
+/** A sentence boundary further back than this would waste most of the budget. */
+const CLIP_MIN = Math.floor(MAX_CHARS * 0.6)
 /** Entries per model call. Bigger = fewer round-trips, smaller = finer progress. */
 const BATCH_SIZE = 8
 /** Stop a bulk run after this many failed calls in a row (quota, offline, …). */
@@ -68,6 +73,19 @@ const PREFS_KEY = 'prefs'
 /** Bumped when the cache key shape changes, so stale entries can't be read. */
 const CACHE_KEY = 'translations.v2'
 
+/** Plugin names are pasted into a shell command, so only this shape is allowed. */
+const PLUGIN_NAME_RE = /^[A-Za-z0-9._-]+$/
+
+/** Badge tones that make official/verified rows read differently from the rest. */
+const TIER_BADGE_VARIANT = {
+  official: 'default',
+  verified: 'success',
+  bundled: 'muted',
+  user: 'outline',
+  desktop: 'outline',
+  community: 'muted'
+}
+
 // ---------------------------------------------------------------------------
 // i18n
 // ---------------------------------------------------------------------------
@@ -78,6 +96,7 @@ const MESSAGES = {
     title: 'Plugin catalog',
     loading: 'Loading the catalog…',
     loadFailed: message => `Could not load the catalog: ${message}`,
+    loadRetryHint: 'Tried twice — if it keeps failing, a proxy may be needed.',
     search: 'Search plugins',
     refresh: 'Refresh the catalog',
     rankBy: 'Rank by',
@@ -103,7 +122,14 @@ const MESSAGES = {
     sourceUser: 'Mine',
     sourceBundled: 'Built-in',
     sourceAll: 'Everything',
-    tier: { official: 'official', community: 'community', bundled: 'bundled', user: 'user', desktop: 'desktop half' },
+    tier: {
+      official: 'official',
+      verified: 'verified',
+      community: 'community',
+      bundled: 'bundled',
+      user: 'user',
+      desktop: 'desktop half'
+    },
     installedDesktopOnly: 'Desktop half installed',
     installAgentHalf: 'Add its agent half',
     translate: 'Translate',
@@ -144,6 +170,22 @@ const MESSAGES = {
       `This deletes ${name}'s files from the current profile, and its desktop half too when the package ships one. It can be reinstalled from the catalog or from Git at any time.`,
     uninstalled: name => `${name} uninstalled.`,
     uninstallFailed: message => `Uninstall failed: ${message}`,
+    invalidName: name => `"${name}" is not a valid plugin name.`,
+    uninstallCliHint: name => `You can also run it yourself: hermes plugins remove ${name}`,
+    updateAvailable: 'Update available',
+    updateTip: (installed, latest) => `installed ${installed} · catalog ${latest}`,
+    update: 'Update',
+    updating: 'Updating…',
+    updatedOk: name => `${name} updated.`,
+    updateUnchanged: 'Already up to date.',
+    updateNotCatalog: name =>
+      `${name} is not a catalog install — update it with hermes plugins update ${name}, or from the app's Plugins tab.`,
+    updateFailed: message => `Update failed: ${message}`,
+    requiresVersion: version => `needs ≥${version}`,
+    requiresVersionWarn: version => `needs ≥${version} (this app is older)`,
+    installedButSkipped: 'Installed, but skipped at load (version too old)',
+    installWillSkip: 'Installing still will not load it until the app is updated.',
+    showMore: n => `Show ${n} more`,
     localSource: 'Installed outside the catalog',
     openRepo: 'Open the repository',
     targetLang: 'Translate into',
@@ -173,6 +215,7 @@ const MESSAGES = {
     title: '插件目录',
     loading: '正在读取插件目录…',
     loadFailed: message => `目录加载失败：${message}`,
+    loadRetryHint: '已自动重试一次仍失败；可能需要开启代理。',
     search: '搜索插件',
     refresh: '重新拉取目录',
     rankBy: '排行口径',
@@ -198,7 +241,14 @@ const MESSAGES = {
     sourceUser: '自己装的',
     sourceBundled: '内置',
     sourceAll: '全部',
-    tier: { official: '官方', community: '社区', bundled: '内置', user: '用户', desktop: '桌面半边' },
+    tier: {
+      official: '官方',
+      verified: '已认证',
+      community: '社区',
+      bundled: '内置',
+      user: '用户',
+      desktop: '桌面半边'
+    },
     installedDesktopOnly: '桌面半边已装',
     installAgentHalf: '装 agent 半边',
     translate: '译',
@@ -237,6 +287,21 @@ const MESSAGES = {
     uninstallBody: name => `会把这个插件的文件从当前 profile 里删掉，带桌面半边的连桌面那份一起删。以后随时可以从目录或 Git 重新装上。`,
     uninstalled: name => `${name} 已卸载`,
     uninstallFailed: message => `卸载失败：${message}`,
+    invalidName: name => `「${name}」不是合法的插件名。`,
+    uninstallCliHint: name => `也可以自己在终端执行：hermes plugins remove ${name}`,
+    updateAvailable: '可升级',
+    updateTip: (installed, latest) => `已装 ${installed} · 目录 ${latest}`,
+    update: '升级',
+    updating: '升级中…',
+    updatedOk: name => `${name} 已升级`,
+    updateUnchanged: '已是最新',
+    updateNotCatalog: name => `${name} 不是从目录装的，请用 hermes plugins update ${name} 或去 App 插件页升级。`,
+    updateFailed: message => `升级失败：${message}`,
+    requiresVersion: version => `需 ≥${version}`,
+    requiresVersionWarn: version => `需 ≥${version}（本机版本偏低）`,
+    installedButSkipped: '已安装，但版本不满足，加载时被跳过',
+    installWillSkip: '装了也会被跳过，先升级 App 才会加载。',
+    showMore: n => `再显示 ${n} 条`,
     localSource: '不在目录里（从 Git 等处装的）',
     openRepo: '打开源码仓库',
     targetLang: '翻译成',
@@ -265,6 +330,7 @@ const MESSAGES = {
     title: '外掛目錄',
     loading: '正在讀取外掛目錄…',
     loadFailed: message => `目錄載入失敗：${message}`,
+    loadRetryHint: '已自動重試一次仍失敗；可能需要開啟代理。',
     search: '搜尋外掛',
     refresh: '重新擷取目錄',
     rankBy: '排行依據',
@@ -290,7 +356,14 @@ const MESSAGES = {
     sourceUser: '自己裝的',
     sourceBundled: '內建',
     sourceAll: '全部',
-    tier: { official: '官方', community: '社群', bundled: '內建', user: '使用者', desktop: '桌面半邊' },
+    tier: {
+      official: '官方',
+      verified: '已認證',
+      community: '社群',
+      bundled: '內建',
+      user: '使用者',
+      desktop: '桌面半邊'
+    },
     installedDesktopOnly: '桌面半邊已裝',
     installAgentHalf: '裝 agent 半邊',
     translate: '譯',
@@ -329,6 +402,21 @@ const MESSAGES = {
     uninstallBody: name => `會把這個外掛的檔案從目前 profile 刪掉，帶桌面半邊的連桌面那份一起刪。之後隨時可以從目錄或 Git 重新安裝。`,
     uninstalled: name => `${name} 已卸載`,
     uninstallFailed: message => `卸載失敗：${message}`,
+    invalidName: name => `「${name}」不是合法的外掛名稱。`,
+    uninstallCliHint: name => `也可以自己在終端機執行：hermes plugins remove ${name}`,
+    updateAvailable: '可升級',
+    updateTip: (installed, latest) => `已裝 ${installed} · 目錄 ${latest}`,
+    update: '升級',
+    updating: '升級中…',
+    updatedOk: name => `${name} 已升級`,
+    updateUnchanged: '已是最新',
+    updateNotCatalog: name => `${name} 不是從目錄安裝的，請用 hermes plugins update ${name} 或到 App 外掛頁升級。`,
+    updateFailed: message => `升級失敗：${message}`,
+    requiresVersion: version => `需 ≥${version}`,
+    requiresVersionWarn: version => `需 ≥${version}（本機版本偏低）`,
+    installedButSkipped: '已安裝，但版本不符，載入時被跳過',
+    installWillSkip: '安裝了也會被跳過，先升級 App 才會載入。',
+    showMore: n => `再顯示 ${n} 條`,
     localSource: '不在目錄裡（從 Git 等處安裝）',
     openRepo: '開啟原始碼倉庫',
     targetLang: '翻譯成',
@@ -444,6 +532,59 @@ function toolsOf(entry) {
   const tools = caps.providesTools ? caps.providesTools.length : 0
   const hooks = caps.providesHooks ? caps.providesHooks.length : 0
   return tools + hooks
+}
+
+/** Dotted numeric version segments; null when the string isn't one. */
+function versionParts(value) {
+  const raw = String(value || '')
+    .trim()
+    .replace(/^v/i, '')
+  if (!/^\d+(\.\d+)*$/.test(raw)) return null
+  return raw.split('.').map(Number)
+}
+
+/**
+ * The catalog only uses `>=x.y.z` for `requiresHermes`. Any other form — or an
+ * unknown current version — counts as satisfied, so we never warn on a guess.
+ */
+function satisfies(required, current) {
+  const match = /^>=\s*(\d+(?:\.\d+)*)$/.exec(String(required || '').trim())
+  if (!match) return true
+  const need = versionParts(match[1])
+  const have = versionParts(current)
+  if (!need || !have) return true
+  for (let i = 0; i < Math.max(need.length, have.length); i += 1) {
+    const want = need[i] || 0
+    const got = have[i] || 0
+    if (got > want) return true
+    if (got < want) return false
+  }
+  return true
+}
+
+/**
+ * Cut a long blurb at the nearest sentence end, so a capped preview never stops
+ * mid-sentence; with no boundary in range, cut hard and mark the truncation.
+ */
+function clipDescription(text) {
+  const value = String(text || '')
+  if (value.length <= MAX_CHARS) return value
+  const head = value.slice(0, MAX_CHARS)
+  // Only a sentence end that is actually followed by whitespace counts — a
+  // bare `.` in ".onion" or "hermes.json" must not split a sentence. One extra
+  // char is scanned so a boundary at the cap can still see what follows.
+  const boundaryRe = /[.!?。！？](?=\s)|\n/g
+  let boundary = -1
+  for (const match of value.slice(0, MAX_CHARS + 1).matchAll(boundaryRe)) {
+    const end = match.index + match[0].length
+    if (end <= MAX_CHARS) boundary = end
+  }
+  return boundary >= CLIP_MIN ? head.slice(0, boundary).trimEnd() : `${head.trimEnd()}…`
+}
+
+/** Seven hex chars are enough to tell two revisions apart on a card. */
+function shortSha(sha) {
+  return String(sha || '').slice(0, 7)
 }
 
 const DAY_MS = 86400000
@@ -598,6 +739,10 @@ function CatalogPage() {
   const [busyName, setBusyName] = useState('')
   const [bulk, setBulk] = useState(null)
   const [tick, setTick] = useState(0)
+  /** Unknown when the bridge or its preload is older than 0.21.2. */
+  const [hermesVersion, setHermesVersion] = useState('')
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [updatingName, setUpdatingName] = useState('')
   const bulkRef = useRef(null)
 
   const resolvedTarget = useMemo(() => {
@@ -614,25 +759,70 @@ function CatalogPage() {
     [instructions, t]
   )
 
+  const fetchCatalog = useCallback(async () => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS)
+    try {
+      const res = await fetch(CATALOG_URL, { cache: 'no-cache', signal: controller.signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.json()
+    } finally {
+      clearTimeout(timer)
+    }
+  }, [])
+
   const loadCatalog = useCallback(async () => {
     setStatus('loading')
     setError('')
-    try {
-      const res = await fetch(CATALOG_URL, { cache: 'no-cache' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setEntries(Array.isArray(data) ? data : [])
-      setFetchedAt(new Date().toISOString())
-      setStatus('ready')
-    } catch (e) {
-      setError(String((e && e.message) || e))
-      setStatus('error')
+    let lastError = ''
+    // One retry: a flaky network or a slow CDN is the common failure here.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const data = await fetchCatalog()
+        setEntries(Array.isArray(data) ? data : [])
+        setFetchedAt(new Date().toISOString())
+        setStatus('ready')
+        return
+      } catch (e) {
+        lastError = String((e && e.message) || e)
+      }
     }
-  }, [])
+    setError(lastError)
+    setStatus('error')
+  }, [fetchCatalog])
 
   useEffect(() => {
     void loadCatalog()
   }, [loadCatalog])
+
+  /**
+   * The catalog lists a `requiresHermes` per entry, but the loader silently
+   * skips a plugin it can't satisfy. Read the app version once so cards can
+   * warn instead. No bridge (plain browser, old preload) simply stays unknown.
+   */
+  useEffect(() => {
+    let alive = true
+    const readVersion = async () => {
+      try {
+        const bridge = typeof window !== 'undefined' ? window.hermesDesktop : undefined
+        if (!bridge || typeof bridge.getVersion !== 'function') return
+        const info = await bridge.getVersion()
+        const version = info && info.appVersion
+        if (alive && typeof version === 'string' && versionParts(version)) setHermesVersion(version)
+      } catch {
+        /* version stays unknown — cards then never warn */
+      }
+    }
+    void readVersion()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  /** Any filter change starts the list over at the first page. */
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [query, category, sort, onlyInstalled, sourceFilter])
 
   /**
    * The app's own plugin folder. A package can ship a desktop half with no agent
@@ -852,7 +1042,7 @@ function CatalogPage() {
       const key = cacheKey(entry, resolvedTarget)
       if (cache[key] || !(entry.description || '').trim()) return
       setBusyName(entry.name)
-      const input = entry.description.slice(0, MAX_CHARS)
+      const input = clipDescription(entry.description)
       const sessionId =
         host.state.focusedSessionId.get() || host.state.activeSessionId.get() || undefined
       try {
@@ -898,7 +1088,7 @@ function CatalogPage() {
         let translations = null
         try {
           translations = await translateMany(
-            chunk.map(entry => entry.description.slice(0, MAX_CHARS)),
+            chunk.map(entry => clipDescription(entry.description)),
             batchInstructions,
             sessionId
           )
@@ -975,6 +1165,37 @@ function CatalogPage() {
     [refreshInstalled, t]
   )
 
+  /** Re-pin a catalog install to the SHA the catalog now lists. */
+  const updateEntry = useCallback(
+    async entry => {
+      const row = installedByName.get(entry.name)
+      if (!row) return
+      const name = row.name || row.catalog_name || entry.name
+      setUpdatingName(entry.name)
+      try {
+        const res = await host.request('plugins.manage', { action: 'update', name }, 180000)
+        if (!res || !res.ok) throw new Error((res && res.error) || 'update rejected')
+        host.notify({
+          kind: 'success',
+          message: res.unchanged ? t('updateUnchanged') : t('updatedOk', name)
+        })
+        await refreshInstalled()
+        setTick(v => v + 1)
+      } catch (e) {
+        const message = String((e && e.message) || e)
+        // 4020 = not a catalog install; retrying can never help, so say what can.
+        if ((e && e.code === 4020) || message.includes('not a catalog install')) {
+          host.notify({ kind: 'warning', message: t('updateNotCatalog', name) })
+        } else {
+          host.notify({ kind: 'error', message: t('updateFailed', message) })
+        }
+      } finally {
+        setUpdatingName('')
+      }
+    },
+    [installedByName, refreshInstalled, t]
+  )
+
   /** The same enable/disable switch the built-in Plugins tab drives. */
   const toggleEntry = useCallback(
     async (entry, enable) => {
@@ -1021,15 +1242,25 @@ function CatalogPage() {
       let removedAgent = false
       let removedDesktop = false
 
+      // The name becomes a shell argument below, so refuse anything that isn't
+      // a plain plugin slug before either half is touched.
+      if (!PLUGIN_NAME_RE.test(String(name || ''))) {
+        errors.push(t('invalidName', name))
+        return { errors, removedAgent, removedDesktop }
+      }
+
       try {
-        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
         const res = await host.request(
-          'plugins.manage',
-          { action: 'remove', name, ...(profile ? { profile } : {}) },
+          'shell.exec',
+          { command: `hermes plugins remove ${name}` },
           180000
         )
-        if (res && res.ok) removedAgent = true
-        else errors.push(`agent: ${(res && res.error) || 'remove rejected'}`)
+        if (res && res.code === 0) removedAgent = true
+        else {
+          // The gateway's PATH may not include a local dev CLI; surface its
+          // stderr instead of pretending the removal silently failed.
+          errors.push(`agent: ${(res && (res.stderr || res.stdout)) || 'remove failed'}`)
+        }
       } catch (e) {
         errors.push(`agent: ${(e && e.message) || e}`)
       }
@@ -1053,7 +1284,7 @@ function CatalogPage() {
 
       return { errors, removedAgent, removedDesktop }
     },
-    []
+    [t]
   )
 
   /** ConfirmDialog's onConfirm: throw to keep the dialog open with the error. */
@@ -1068,7 +1299,14 @@ function CatalogPage() {
       setBusyName('')
     }
     if (!out.removedAgent && !out.removedDesktop) {
-      const message = out.errors.join(' · ') || 'remove rejected'
+      // Tell the user about the manual escape hatch too — the gateway's PATH
+      // may simply not have the CLI.
+      const message = [
+        out.errors.join(' · ') || 'remove rejected',
+        PLUGIN_NAME_RE.test(target.name) ? t('uninstallCliHint', target.name) : ''
+      ]
+        .filter(Boolean)
+        .join(' · ')
       host.notify({ kind: 'error', message: t('uninstallFailed', message) })
       throw new Error(message)
     }
@@ -1358,9 +1596,15 @@ function CatalogPage() {
 
       // ── body ──────────────────────────────────────────────────────────────
       status === 'error'
-        ? jsx('div', {
+        ? jsxs('div', {
             className: 'rounded-md border border-(--ui-danger) p-3 text-sm',
-            children: t('loadFailed', error)
+            children: [
+              jsx('div', { children: t('loadFailed', error) }),
+              jsx('div', {
+                className: 'mt-1 text-xs text-(--ui-text-tertiary)',
+                children: t('loadRetryHint')
+              })
+            ]
           })
         : status === 'loading'
           ? jsxs('div', {
@@ -1369,9 +1613,10 @@ function CatalogPage() {
             })
           : jsx(ScrollArea, {
               className: 'min-h-0 flex-1',
-              children: jsx('div', {
+              children: jsxs('div', {
                 className: 'flex flex-col gap-2 pr-2',
-                children: filtered.map((entry, rank) => {
+                children: [
+                  filtered.slice(0, visibleCount).map((entry, rank) => {
                   const key = cacheKey(entry, resolvedTarget)
                   const blurb = cache[key]
                   const row = installedByName.get(entry.name)
@@ -1385,6 +1630,12 @@ function CatalogPage() {
                   const isSelected = selected.has(entry.name)
                   const busy = busyName === entry.name
                   const toolCount = toolsOf(entry)
+                  const updating = updatingName === entry.name
+                  const canUpdate = Boolean(row && row.update_available === true)
+                  const versionKnown = Boolean(hermesVersion)
+                  const versionOk =
+                    !entry.requiresHermes || satisfies(entry.requiresHermes, hermesVersion)
+                  const versionWarn = versionKnown && !versionOk
                   return jsxs(
                     'div',
                     {
@@ -1432,10 +1683,30 @@ function CatalogPage() {
                                     children: entry.name
                                   })
                             }),
-                            jsx('span', {
-                              className: 'text-xs text-(--ui-text-tertiary)',
+                            jsx(Badge, {
+                              size: 'xs',
+                              variant:
+                                TIER_BADGE_VARIANT[entry.tier || 'community'] || 'muted',
                               children: t(`tier.${entry.tier || 'community'}`)
                             }),
+                            entry.requiresHermes
+                              ? jsx(Tip, {
+                                  label: versionWarn
+                                    ? t('installWillSkip')
+                                    : t('requiresVersion', entry.requiresHermes),
+                                  children: jsx('span', {
+                                    className: cn(
+                                      'text-xs',
+                                      versionWarn
+                                        ? 'text-(--ui-danger)'
+                                        : 'text-(--ui-text-tertiary)'
+                                    ),
+                                    children: versionWarn
+                                      ? t('requiresVersionWarn', entry.requiresHermes)
+                                      : t('requiresVersion', entry.requiresHermes)
+                                  })
+                                })
+                              : null,
                             entry.local
                               ? jsx('span', {
                                   className: 'text-xs text-(--ui-text-tertiary)',
@@ -1488,6 +1759,20 @@ function CatalogPage() {
                                       className: 'text-xs text-(--ui-text-tertiary)',
                                       children: row ? t('installed') : t('installedDesktopOnly')
                                     }),
+                                    canUpdate
+                                      ? jsx(Badge, {
+                                          size: 'xs',
+                                          variant: 'success',
+                                          children: t('updateAvailable')
+                                        })
+                                      : null,
+                                    versionWarn
+                                      ? jsx(Badge, {
+                                          size: 'xs',
+                                          variant: 'warn',
+                                          children: t('installedButSkipped')
+                                        })
+                                      : null,
                                     row && row.key
                                       ? jsx(Tip, {
                                           label: rowEnabled ? t('disableTip') : t('enableTip'),
@@ -1497,6 +1782,23 @@ function CatalogPage() {
                                             'aria-label': t('toggleAria', entry.name),
                                             className: SWITCH_CLASS,
                                             onCheckedChange: next => toggleEntry(entry, next)
+                                          })
+                                        })
+                                      : null,
+                                    canUpdate
+                                      ? jsx(Tip, {
+                                          label: t(
+                                            'updateTip',
+                                            shortSha(row.installed_sha),
+                                            shortSha(row.catalog_sha)
+                                          ),
+                                          children: jsx(Button, {
+                                            size: 'xs',
+                                            variant: 'secondary',
+                                            type: 'button',
+                                            disabled: busy || updating,
+                                            onClick: () => updateEntry(entry),
+                                            children: updating ? t('updating') : t('update')
                                           })
                                         })
                                       : null,
@@ -1513,20 +1815,32 @@ function CatalogPage() {
                                       size: 'xs',
                                       variant: 'ghost',
                                       type: 'button',
-                                      disabled: busy,
+                                      disabled: busy || updating,
                                       onClick: () => setPendingRemove(entry),
                                       children: t('uninstall')
                                     })
                                   ]
                                 })
-                              : jsx(Button, {
-                                  size: 'xs',
-                                  variant: 'secondary',
-                                  type: 'button',
-                                  disabled: busy,
-                                  onClick: () => installEntry(entry),
-                                  children: busy ? '…' : t('install')
-                                })
+                              : versionWarn
+                                ? jsx(Tip, {
+                                    label: t('installWillSkip'),
+                                    children: jsx(Button, {
+                                      size: 'xs',
+                                      variant: 'destructive',
+                                      type: 'button',
+                                      disabled: busy,
+                                      onClick: () => installEntry(entry),
+                                      children: busy ? '…' : t('install')
+                                    })
+                                  })
+                                : jsx(Button, {
+                                    size: 'xs',
+                                    variant: 'secondary',
+                                    type: 'button',
+                                    disabled: busy,
+                                    onClick: () => installEntry(entry),
+                                    children: busy ? '…' : t('install')
+                                  })
                           ]
                         }),
                         jsx('div', {
@@ -1561,7 +1875,26 @@ function CatalogPage() {
                     },
                     key
                   )
-                })
+                  }),
+                  filtered.length > visibleCount
+                    ? jsx('div', {
+                        className: 'flex justify-center pt-1',
+                        children: jsx(Button, {
+                          size: 'sm',
+                          variant: 'outline',
+                          type: 'button',
+                          onClick: () =>
+                            setVisibleCount(count =>
+                              Math.min(filtered.length, count + PAGE_SIZE)
+                            ),
+                          children: t(
+                            'showMore',
+                            Math.min(PAGE_SIZE, filtered.length - visibleCount)
+                          )
+                        })
+                      })
+                    : null
+                ]
               })
             }),
       jsx(ConfirmDialog, {
