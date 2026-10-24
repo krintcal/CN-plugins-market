@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 — 2026-10-24
+
+- **修卡片横向溢出（真机截图已确认）。** 列表从 SDK 的 `ScrollArea` 换成原生滚动 div：`ScrollArea` 内部把 children 包在 `display: table` 的容器里，而这个容器是 shrink-to-fit、会涨到 `max-content` 宽度，于是 flex 列拿到的是「整段简介一行不换行」的宽度，卡片跟着变宽，正文在窗口内被裁、右侧的译 / 安装 / 详情 / 开关按钮被推到窗口外。换成原生 div 后滚动容器加 `overflow-x-hidden`，卡片根节点加 `min-w-0`，简介加 `break-words`；详情面板的截图行加 `overflow-hidden`、缩略图加 `max-w-full`，header / 筛选栏补 `min-w-0`。只改布局，检索、翻译、安装、升级、卸载、分页逻辑一行没动。
+
 ## 1.2.1 — 2026-10-24
 
 - **检索词表收窄。** 去掉一批过于宽泛的英文词：`数据库` 不再映射 `data`，`代理` 不再映射 `network`，`用量` 不再映射 `token`，`定时` 不再映射 `task`，`统计` 不再映射 `stat`；`桌面` 只保留 `desktop` / `gui`，不再用 `ui` / `window`。同时补上更精确的词根（`database` / `sqlite` / `postgres`、`proxy` / `vpn` / `tunnel`、`cron` / `schedul` / `timer`、`metric` / `analytic` 等）。中文键组合取最长匹配，`数据库` 不会顺带展开成 `数据`。

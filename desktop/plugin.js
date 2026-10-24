@@ -28,7 +28,6 @@ import {
   haptic,
   host,
   ROUTES_AREA,
-  ScrollArea,
   Select,
   SelectContent,
   SelectItem,
@@ -1079,7 +1078,7 @@ function DetailPanel({ entry, t }) {
         ? detailRow(
             t('screenshotsLabel'),
             jsx('div', {
-              className: 'flex flex-wrap gap-2',
+              className: 'flex flex-wrap gap-2 overflow-hidden',
               children: visibleShots.map(url =>
                 jsx(
                   'img',
@@ -1088,7 +1087,7 @@ function DetailPanel({ entry, t }) {
                     alt: '',
                     loading: 'lazy',
                     className:
-                      'h-24 w-auto cursor-pointer rounded border border-(--ui-border) object-cover',
+                      'h-24 w-auto max-w-full cursor-pointer rounded border border-(--ui-border) object-cover',
                     onClick: () => openExternal(url, t('openFailed')),
                     onError: () =>
                       setFailedShots(prev => {
@@ -1768,11 +1767,11 @@ function CatalogPage() {
   const translatedCount = filtered.length - pending.length
 
   return jsxs('div', {
-    className: 'flex h-full min-h-0 flex-col gap-3 p-4',
+    className: 'flex h-full min-w-0 min-h-0 flex-col gap-3 p-4',
     children: [
       // ── header: title + one status line, actions on the right ─────────────
       jsxs('div', {
-        className: 'flex flex-wrap items-center justify-between gap-x-3 gap-y-2',
+        className: 'flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2',
         children: [
           jsxs('div', {
             className: 'flex min-w-0 items-baseline gap-2',
@@ -1861,7 +1860,7 @@ function CatalogPage() {
 
       // ── filters: four compact controls on one line ────────────────────────
       jsxs('div', {
-        className: 'flex flex-wrap items-center gap-x-4 gap-y-2 text-xs',
+        className: 'flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs',
         children: [
           jsxs('div', {
             className: 'flex items-center gap-2',
@@ -2065,10 +2064,11 @@ function CatalogPage() {
                 title: t('searchNoResult'),
                 description: t('searchTip')
               })
-            : jsx(ScrollArea, {
-              className: 'min-h-0 flex-1',
+            : jsx('div', {
+              className:
+                'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable] pr-2',
               children: jsxs('div', {
-                className: 'flex flex-col gap-2 pr-2',
+                className: 'flex flex-col gap-2',
                 children: [
                   filtered.slice(0, visibleCount).map((entry, rank) => {
                   const key = cacheKey(entry, resolvedTarget)
@@ -2095,7 +2095,7 @@ function CatalogPage() {
                     'div',
                     {
                       className: cn(
-                        'rounded-md border p-3',
+                        'min-w-0 rounded-md border p-3',
                         isSelected ? 'border-(--ui-accent)' : 'border-(--ui-border)'
                       ),
                       children: [
@@ -2318,7 +2318,7 @@ function CatalogPage() {
                           ]
                         }),
                         jsx('div', {
-                          className: 'mt-1 text-sm leading-relaxed',
+                          className: 'mt-1 break-words text-sm leading-relaxed',
                           children: blurb || entry.description || ''
                         }),
                         isOpen
