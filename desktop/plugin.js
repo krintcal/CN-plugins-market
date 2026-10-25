@@ -274,7 +274,7 @@ const MESSAGES = {
     uninstallTitle: name => `Uninstall ${name}?`,
     uninstallBody: name =>
       `This deletes ${name}'s files from the current profile, and its desktop half too when the package ships one. It can be reinstalled from the catalog or from Git at any time.`,
-    uninstalled: name => `${name} uninstalled.`,
+    uninstalled: name => `${name} uninstalled. Restart the gateway to finish unloading it.`,
     uninstallFailed: message => `Uninstall failed: ${message}`,
     invalidName: name => `"${name}" is not a valid plugin name.`,
     uninstallCliHint: name => `You can also run it yourself: hermes plugins remove ${name}`,
@@ -282,10 +282,13 @@ const MESSAGES = {
     updateTip: (installed, latest) => `installed ${installed} · catalog ${latest}`,
     update: 'Update',
     updating: 'Updating…',
-    updatedOk: name => `${name} updated.`,
+    updatedOk: name => `${name} updated. Restart the gateway to apply.`,
     updateUnchanged: 'Already up to date.',
     updateNotCatalog: name =>
       `${name} is not a catalog install — update it with hermes plugins update ${name}, or from the app's Plugins tab.`,
+    updateViaApp:
+      "This package was not installed from the catalog — update it from the app's Plugins tab.",
+    updateInApp: 'Update in app',
     updateFailed: message => `Update failed: ${message}`,
     requiresVersion: version => `needs ≥${version}`,
     requiresVersionWarn: version => `needs ≥${version} (this app is older)`,
@@ -297,6 +300,10 @@ const MESSAGES = {
     details: 'Details',
     hideDetails: 'Hide details',
     ver: 'Version',
+    portableBadge: 'Portable',
+    portableTip: 'Agent Plugins v1 format — it can be moved to another Hermes as-is.',
+    pinnedBadge: sha => `Pinned @ ${sha}`,
+    pinnedTip: 'It will not follow catalog updates until it is re-pinned.',
     platformsLabel: 'Platforms',
     maintainerLabel: 'Maintainer',
     installCommandLabel: 'Install command',
@@ -415,7 +422,7 @@ const MESSAGES = {
     uninstall: '卸载',
     uninstallTitle: name => `卸载 ${name}？`,
     uninstallBody: name => `会把这个插件的文件从当前 profile 里删掉，带桌面半边的连桌面那份一起删。以后随时可以从目录或 Git 重新装上。`,
-    uninstalled: name => `${name} 已卸载`,
+    uninstalled: name => `${name} 已卸载，重启网关后完全卸载`,
     uninstallFailed: message => `卸载失败：${message}`,
     invalidName: name => `「${name}」不是合法的插件名。`,
     uninstallCliHint: name => `也可以自己在终端执行：hermes plugins remove ${name}`,
@@ -423,9 +430,11 @@ const MESSAGES = {
     updateTip: (installed, latest) => `已装 ${installed} · 目录 ${latest}`,
     update: '升级',
     updating: '升级中…',
-    updatedOk: name => `${name} 已升级`,
+    updatedOk: name => `${name} 已升级，重启网关后生效`,
     updateUnchanged: '已是最新',
     updateNotCatalog: name => `${name} 不是从目录装的，请用 hermes plugins update ${name} 或去 App 插件页升级。`,
+    updateViaApp: '这个包不是从目录装的，到 App 的插件页升级。',
+    updateInApp: '去 App 里升级',
     updateFailed: message => `升级失败：${message}`,
     requiresVersion: version => `需 ≥${version}`,
     requiresVersionWarn: version => `需 ≥${version}（本机版本偏低）`,
@@ -437,6 +446,10 @@ const MESSAGES = {
     details: '详情',
     hideDetails: '收起详情',
     ver: '版本',
+    portableBadge: '便携',
+    portableTip: 'Agent Plugins v1 格式，可原样搬到别的 Hermes。',
+    pinnedBadge: sha => `固定 @ ${sha}`,
+    pinnedTip: '重新固定前不会跟随目录更新。',
     platformsLabel: '平台',
     maintainerLabel: '维护者',
     installCommandLabel: '安装命令',
@@ -554,7 +567,7 @@ const MESSAGES = {
     uninstall: '卸載',
     uninstallTitle: name => `卸載 ${name}？`,
     uninstallBody: name => `會把這個外掛的檔案從目前 profile 刪掉，帶桌面半邊的連桌面那份一起刪。之後隨時可以從目錄或 Git 重新安裝。`,
-    uninstalled: name => `${name} 已卸載`,
+    uninstalled: name => `${name} 已卸載，重啟閘道後完全卸載`,
     uninstallFailed: message => `卸載失敗：${message}`,
     invalidName: name => `「${name}」不是合法的外掛名稱。`,
     uninstallCliHint: name => `也可以自己在終端機執行：hermes plugins remove ${name}`,
@@ -562,9 +575,11 @@ const MESSAGES = {
     updateTip: (installed, latest) => `已裝 ${installed} · 目錄 ${latest}`,
     update: '升級',
     updating: '升級中…',
-    updatedOk: name => `${name} 已升級`,
+    updatedOk: name => `${name} 已升級，重啟閘道後生效`,
     updateUnchanged: '已是最新',
     updateNotCatalog: name => `${name} 不是從目錄安裝的，請用 hermes plugins update ${name} 或到 App 外掛頁升級。`,
+    updateViaApp: '這個包不是從目錄安裝的，到 App 的外掛頁升級。',
+    updateInApp: '到 App 裡升級',
     updateFailed: message => `升級失敗：${message}`,
     requiresVersion: version => `需 ≥${version}`,
     requiresVersionWarn: version => `需 ≥${version}（本機版本偏低）`,
@@ -576,6 +591,10 @@ const MESSAGES = {
     details: '詳情',
     hideDetails: '收合詳情',
     ver: '版本',
+    portableBadge: '便攜',
+    portableTip: 'Agent Plugins v1 格式，可原樣搬到別的 Hermes。',
+    pinnedBadge: sha => `固定 @ ${sha}`,
+    pinnedTip: '重新固定前不會跟隨目錄更新。',
     platformsLabel: '平台',
     maintainerLabel: '維護者',
     installCommandLabel: '安裝指令',
@@ -1034,7 +1053,7 @@ function detailRow(label, value, key) {
  * gaps (only 670/800 versions, 144/800 platforms, …), and an empty row would
  * just be noise. `readme` is a boolean flag, not text — hence a link only.
  */
-function DetailPanel({ entry, blurb, t }) {
+function DetailPanel({ entry, row, blurb, t }) {
   const caps = entry.capabilities || {}
   const env = Array.isArray(caps.requiresEnv) ? caps.requiresEnv : []
   const tools = Array.isArray(caps.providesTools) ? caps.providesTools : []
@@ -1064,6 +1083,51 @@ function DetailPanel({ entry, blurb, t }) {
     )
   }
   if (entry.version) rows.push(detailRow(t('ver'), entry.version, 'version'))
+  // Provenance comes from the installed row, not the catalog entry.
+  const badges = []
+  if (row && row.portable === true) {
+    badges.push(
+      jsx(
+        Tip,
+        {
+          label: t('portableTip'),
+          children: jsx('span', {
+            className: 'inline-flex',
+            children: jsx(Badge, { variant: 'muted', size: 'xs', children: t('portableBadge') })
+          })
+        },
+        'portable'
+      )
+    )
+  }
+  if (row && row.pinned_sha) {
+    badges.push(
+      jsx(
+        Tip,
+        {
+          label: t('pinnedTip'),
+          children: jsx('span', {
+            className: 'inline-flex',
+            children: jsx(Badge, {
+              variant: 'muted',
+              size: 'xs',
+              children: t('pinnedBadge', shortSha(row.pinned_sha))
+            })
+          })
+        },
+        'pinned'
+      )
+    )
+  }
+  if (badges.length) {
+    rows.push(
+      detailRow(
+        '',
+        jsx('div', { className: 'flex flex-wrap gap-1.5', children: badges }),
+        'provenance'
+      )
+    )
+  }
   if (platforms.length) rows.push(detailRow(t('platformsLabel'), platforms.join(', '), 'platforms'))
   if (entry.maintainer) {
     rows.push(
@@ -2255,6 +2319,10 @@ function CatalogPage() {
                   const dateTip = [updatedText, addedText].filter(Boolean).join(' · ')
                   const updating = updatingName === entry.name
                   const canUpdate = Boolean(row && row.update_available === true)
+                  // Only catalog installs can be re-pinned from here; a git
+                  // install's `update_target` is handled by the app's own tab.
+                  const catalogUpdate = canUpdate && Boolean(row && row.catalog_sha)
+                  const gitUpdate = canUpdate && !catalogUpdate && Boolean(row && row.update_target)
                   const versionKnown = Boolean(hermesVersion)
                   const versionOk =
                     !entry.requiresHermes || satisfies(entry.requiresHermes, hermesVersion)
@@ -2428,7 +2496,7 @@ function CatalogPage() {
                                           })
                                         })
                                       : null,
-                                    canUpdate
+                                    catalogUpdate
                                       ? jsx(Tip, {
                                           label: t(
                                             'updateTip',
@@ -2444,7 +2512,27 @@ function CatalogPage() {
                                             children: updating ? t('updating') : t('update')
                                           })
                                         })
-                                      : null,
+                                      : gitUpdate
+                                        ? jsx(Tip, {
+                                            label: t('updateViaApp'),
+                                            children: jsx(Button, {
+                                              size: 'xs',
+                                              variant: 'ghost',
+                                              type: 'button',
+                                              onClick: () => {
+                                                try {
+                                                  host.navigate('/capabilities?tab=plugins')
+                                                } catch (e) {
+                                                  host.notify({
+                                                    kind: 'error',
+                                                    message: t('toggleFailed', (e && e.message) || e)
+                                                  })
+                                                }
+                                              },
+                                              children: t('updateInApp')
+                                            })
+                                          })
+                                        : null,
                                     !row && !busy
                                       ? jsx(Button, {
                                           size: 'xs',
@@ -2509,7 +2597,7 @@ function CatalogPage() {
                           ]
                         }),
                         isOpen
-                          ? jsx(DetailPanel, { entry, blurb, t })
+                          ? jsx(DetailPanel, { entry, row, blurb, t })
                           : null,
                         showsDesktopHalf
                           ? jsx('div', {

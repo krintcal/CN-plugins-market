@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-10-25
+
+- **详情里标出包的来源。** 0.22.5 的 `plugins.manage list` 行新增了 `portable`（Agent Plugins v1 便携包）和 `pinned_sha`（`--ref` 固定提交）。详情面板在「版本」后面补两个徽标：`便携`（Tip 说明「可原样搬到别的 Hermes」）和 `固定 @ xxxx`（Tip 说明「重新固定前不会跟随目录更新」）。这两个字段在目录 entry 上没有，所以 `DetailPanel` 多接一个 `row` prop，有数据才显示。
+- **升级 / 卸载的提示说清生效条件。** 和内置插件页一致：升级后要重启网关才生效，卸载后也要重启网关才完全卸载。`updateUnchanged`（已是最新）没变。
+- **git 安装的「可升级」不再装成目录升级。** `update_available` 对 git 安装也会为 true（靠 `update_target`），但目录升级接口对它们只会回 4020。现在只有 `catalog_sha` 存在才显示原来的「升级」按钮；只有 `update_target` 时徽标仍是「可升级」，按钮换成 ghost 的「去 App 里升级」，点击跳到 App 的插件页，Tip 说明这个包不是从目录装的。4020 分支保留作兜底。
+
 ## 1.2.8 — 2026-10-24
 
 - **卸载改走原生 RPC。** 1.1.0 时后端没有 `remove`，只能用 `shell.exec` 调 CLI 兜底；0.22.5 的 `plugins.manage` 补上了 `remove`（和 `hermes plugins remove` 同一个核心函数 `dashboard_remove_user_plugin`）。现在优先发 `{action:'remove', name}`，只有后端回 `4017 unknown plugins action`（老版本）才退回 CLI。常见路径不再需要 shell，也不依赖 gateway 的 PATH。
