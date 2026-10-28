@@ -198,6 +198,7 @@ const MESSAGES = {
     title: 'Plugin catalog',
     loading: 'Loading the catalog…',
     loadFailed: message => `Could not load the catalog: ${message}`,
+    installedFailed: message => `Could not read the installed list: ${message}`,
     loadRetryHint: 'Tried twice — if it keeps failing, a proxy may be needed.',
     search: 'Search plugins',
     refresh: 'Refresh the catalog',
@@ -348,6 +349,7 @@ const MESSAGES = {
     title: '插件目录',
     loading: '正在读取插件目录…',
     loadFailed: message => `目录加载失败：${message}`,
+    installedFailed: message => `读不到已安装列表：${message}`,
     loadRetryHint: '已自动重试一次仍失败；可能需要开启代理。',
     search: '搜索插件',
     refresh: '重新拉取目录',
@@ -493,6 +495,7 @@ const MESSAGES = {
     title: '外掛目錄',
     loading: '正在讀取外掛目錄…',
     loadFailed: message => `目錄載入失敗：${message}`,
+    installedFailed: message => `讀不到已安裝清單：${message}`,
     loadRetryHint: '已自動重試一次仍失敗；可能需要開啟代理。',
     search: '搜尋外掛',
     refresh: '重新擷取目錄',
@@ -1301,6 +1304,8 @@ function CatalogPage() {
   const [category, setCategory] = useState(prefs.category)
   const [target, setTarget] = useState(prefs.target)
   const [installedRows, setInstalledRows] = useState([])
+  /** Failed `plugins.manage list` — shown, not swallowed (an empty list is a valid answer). */
+  const [installedError, setInstalledError] = useState('')
   /** Desktop halves on disk (`<plugins root>/<name>`) — invisible to the agent list. */
   const [desktopHalves, setDesktopHalves] = useState(() => new Set())
   const [onlyInstalled, setOnlyInstalled] = useState(false)
@@ -1432,14 +1437,18 @@ function CatalogPage() {
 
   const refreshInstalled = useCallback(async () => {
     try {
-      const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
-      const res = await host.request('plugins.manage', {
-        action: 'list',
-        ...(profile ? { profile } : {})
-      })
+      // No `profile` param: `plugins.manage` reads it as "switch scope to THAT
+      // profile's home", and `focusedSessionProfile` normalises to 'default' in a
+      // window whose socket is homed on the default backend — which listed an
+      // empty catalog while the real profile had 7 installs.
+      const res = await host.request('plugins.manage', { action: 'list' })
       setInstalledRows(res && res.plugins ? res.plugins : [])
-    } catch {
-      /* an unavailable list just leaves every card showing Install */
+      setInstalledError('')
+    } catch (e) {
+      // Swallowing this is what hid the bug: an empty list and a failed call
+      // look identical on screen.
+      setInstalledRows([])
+      setInstalledError(String((e && e.message) || e))
     }
     await refreshDesktopHalves()
   }, [refreshDesktopHalves])
@@ -1768,15 +1777,13 @@ function CatalogPage() {
     async entry => {
       setBusyName(entry.name)
       try {
-        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
         const res = await host.request(
           'plugins.manage',
           {
             action: 'install',
             identifier: entry.subdir ? `${entry.repo}#${entry.subdir}` : entry.repo,
             catalog_name: entry.name,
-            enable: true,
-            ...(profile ? { profile } : {})
+            enable: true
           },
           600000
         )
@@ -1833,10 +1840,9 @@ function CatalogPage() {
       }
       setBusyName(entry.name)
       try {
-        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
         const res = await host.request(
           'plugins.manage',
-          { action: 'toggle', key: row.key, enable, ...(profile ? { profile } : {}) },
+          { action: 'toggle', key: row.key, enable },
           120000
         )
         if (!res || !res.ok) throw new Error((res && res.error) || 'toggle rejected')
@@ -1880,10 +1886,9 @@ function CatalogPage() {
       // answer 4017 — only those fall back to running the CLI, so the common path
       // needs no shell at all.
       try {
-        const profile = host.state.focusedSessionProfile.get() || host.state.profile.get() || undefined
         const res = await host.request(
           'plugins.manage',
-          { action: 'remove', name, ...(profile ? { profile } : {}) },
+          { action: 'remove', name },
           180000
         )
         if (res && res.ok) removedAgent = true
@@ -2223,6 +2228,13 @@ function CatalogPage() {
           })
         ]
       }),
+
+      installedError
+        ? jsx('div', {
+            className: 'text-xs text-(--ui-danger)',
+            children: t('installedFailed', installedError)
+          })
+        : null,
 
       // ── selection (only in selection mode) ───────────────────────────────
       selectMode && status === 'ready'

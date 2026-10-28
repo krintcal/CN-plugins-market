@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1 — 2026-10-28
+
+- **修「只看已安装」一直是 0。** 0.22 的 `plugins.manage` 是 _scoped RPC：`profile` 参数的意思是「切到**另一个** profile 的 HERMES_HOME 去读」。我们一直把 `host.state.focusedSessionProfile` 传进去，而它在 socket 挂在 default 后端时会归一化成 `'default'`，于是列的是 `E:\Hermes\core`（默认 profile）的插件表 —— 那里没有用户插件，结果就是 0 条。现在 list / toggle / install / remove 四处**都不再传 `profile`**，后端就待在自己真正服务的那个 profile 里。
+- **列表失败不再静默。** 之前 `catch {}` 把错误吞掉，读失败和「本来就是空」在界面上长得一模一样。现在失败会把消息显示成一行红字（新增 i18n `installedFailed`），下次再坏一眼能看见。
+
 ## 1.3.0 — 2026-10-25
 
 - **详情里标出包的来源。** 0.22.5 的 `plugins.manage list` 行新增了 `portable`（Agent Plugins v1 便携包）和 `pinned_sha`（`--ref` 固定提交）。详情面板在「版本」后面补两个徽标：`便携`（Tip 说明「可原样搬到别的 Hermes」）和 `固定 @ xxxx`（Tip 说明「重新固定前不会跟随目录更新」）。这两个字段在目录 entry 上没有，所以 `DetailPanel` 多接一个 `row` prop，有数据才显示。
