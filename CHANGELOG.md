@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.0 — 2026-11-13
+
+**详情面板加「开发态」。** 只在有 desktop 半边且有安装路径的行出现，**展开时才拉数据**（一次只读当前这一行），结果按插件名缓存在组件 state 里；`重读` 清掉该行缓存重拉。
+
+- **运行副本一致性**：用桥的 `readFileText` 读源 `desktop/plugin.js` 与 `<appRoot>\desktop-plugins\<name>\plugin.js`，去掉 `// synced copy of` 标记行、行尾空白与首尾空行后比较 —— `已同步` / `待同步`（附两边字节数差）/ `源缺失` / `运行副本不存在`。
+- **git 分支/提交**：直接读 `.git/HEAD` 与对应 ref 文件（不执行任何命令），显示 `git: main`。
+- **认领警告**：运行副本目录里出现 `.hermes-package.json` 时红字提示「已被 Hermes 认领（opt-in），侧边栏默认不显示」。
+- **i18n**：新增 `devState`、`devGitBranch`、`devCopySynced`、`devCopyPending`、`devCopyNoSource`、`devCopyMissing`、`devCopyClaimed`、`devReread`、`devLoading`、`devBadPath`、`devRunCopy` 等（三语言各 106 → 123 键）。
+- 版本 → `2.2.0`；未改任何既有 list / toggle / update / remove / install 逻辑，未动 agent 半边。
+
+**过程中踩到两件事（已按现实改掉）**
+
+- `readFileText` 返回的是 `{ text, byteSize, truncated }` 对象，不是字符串。一开始按字符串判断，源文件永远"读不到"，界面上就是「源缺失」。已改成认对象。
+- **`shell.exec` 在桌面插件里调不通**：网关直接回 `invalid_params`，所以 `git status` 的未提交/ahead-behind、以及 `copy` 同步**都做不了**。同步按钮暂时隐藏（`syncable = false`），开发态只留"能纯读文件拿到"的部分。要恢复这两项，得让插件自己的 **Python 半边**暴露一个 RPC（真正在网关进程里干活），或者由 Agent 侧代劳。
+
 ## 2.1.0 — 2026-11-13
 
 **信息架构 + 视觉重做。** 功能逻辑（list / toggle / update / update_all / remove / remove_desktop / inspect / install / install_desktop、consent 与 scan 流程、错误红字）一行没动，只改分组和外观。

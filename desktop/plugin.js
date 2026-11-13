@@ -26,7 +26,7 @@ import {
   useI18n,
   usePluginI18n
 } from '@hermes/plugin-sdk'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 const ID = 'cn-plugins-market'
@@ -172,6 +172,23 @@ const MESSAGES = {
     removeDesktopDone: name => `${name} desktop half removed.`,
     removeFailed: message => `Uninstall failed: ${message}`,
     copyCommand: 'Copy command',
+    devState: 'Dev',
+    devGitBranch: 'git',
+    devGitDirty: n => `${n} uncommitted`,
+    devGitAhead: (a, b) => `↑${a}↓${b}`,
+    devGitLast: 'Last commit',
+    devNotGit: 'Not a Git repository',
+    devCopySynced: 'In sync',
+    devCopyPending: 'Needs sync',
+    devCopyNoSource: 'Source missing',
+    devCopyMissing: 'Running copy missing',
+    devCopyClaimed: 'Claimed by Hermes (opt-in) — hidden from the sidebar by default',
+    syncToApp: 'Sync to running copy',
+    devReread: 'Re-read',
+    devLoading: 'Reading…',
+    devBadPath: 'Path not usable',
+    devSyncedToast: 'Synced — the desktop half will hot-reload.',
+    devRunCopy: 'Running copy',
     loading: 'Reading installed plugins…',
     loadFailed: message => `Could not read the installed list: ${message}`,
     retry: 'Retry'
@@ -283,6 +300,23 @@ const MESSAGES = {
     removeDesktopDone: name => `${name} 的桌面半边已卸载`,
     removeFailed: message => `卸载失败：${message}`,
     copyCommand: '复制命令',
+    devState: '开发态',
+    devGitBranch: 'git',
+    devGitDirty: n => `${n} 处未提交`,
+    devGitAhead: (a, b) => `↑${a}↓${b}`,
+    devGitLast: '最后提交',
+    devNotGit: '非 git 仓库',
+    devCopySynced: '已同步',
+    devCopyPending: '待同步',
+    devCopyNoSource: '源缺失',
+    devCopyMissing: '运行副本不存在',
+    devCopyClaimed: '已被 Hermes 认领（opt-in），侧边栏默认不显示',
+    syncToApp: '同步到运行副本',
+    devReread: '重读',
+    devLoading: '读取中…',
+    devBadPath: '路径不可用',
+    devSyncedToast: '已同步，桌面端会自动热重载',
+    devRunCopy: '运行副本',
     loading: '正在读取已安装插件…',
     loadFailed: message => `读不到已安装列表：${message}`,
     retry: '重试'
@@ -394,6 +428,23 @@ const MESSAGES = {
     removeDesktopDone: name => `${name} 的桌面半邊已卸載`,
     removeFailed: message => `卸載失敗：${message}`,
     copyCommand: '複製指令',
+    devState: '開發態',
+    devGitBranch: 'git',
+    devGitDirty: n => `${n} 處未提交`,
+    devGitAhead: (a, b) => `↑${a}↓${b}`,
+    devGitLast: '最後提交',
+    devNotGit: '非 git 倉庫',
+    devCopySynced: '已同步',
+    devCopyPending: '待同步',
+    devCopyNoSource: '來源缺失',
+    devCopyMissing: '執行副本不存在',
+    devCopyClaimed: '已被 Hermes 認領（opt-in），側邊欄預設不顯示',
+    syncToApp: '同步到執行副本',
+    devReread: '重讀',
+    devLoading: '讀取中…',
+    devBadPath: '路徑不可用',
+    devSyncedToast: '已同步，桌面端會自動熱重載',
+    devRunCopy: '執行副本',
     loading: '正在讀取已安裝外掛…',
     loadFailed: message => `讀不到已安裝清單：${message}`,
     retry: '重試'
@@ -529,6 +580,141 @@ function gridPair(label, value, key) {
 }
 
 // ---------------------------------------------------------------------------
+// dev state (git / running copy)
+// ---------------------------------------------------------------------------
+
+const SHELL_UNSAFE = /["&%^|<>]/
+const NAME_RE = /^[A-Za-z0-9._-]+$/
+
+/** Absolute path and none of the characters cmd.exe treats specially. */
+function isSafeShellPath(path) {
+  const value = String(path || '')
+  if (!value || SHELL_UNSAFE.test(value)) return false
+  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\') || value.startsWith('/')
+}
+
+function isSafeName(name) {
+  const value = String(name || '')
+  return NAME_RE.test(value) && value !== '.' && value !== '..'
+}
+
+/** `desktopPluginsRoot()` returns `…\desktop-plugins`; take its parent. */
+function appRootOf(desktopPluginsRoot) {
+  const clean = String(desktopPluginsRoot || '').replace(/[\\/]+$/, '')
+  if (!clean) return ''
+  if (/[\\/]desktop-plugins$/i.test(clean)) return clean.replace(/[\\/]desktop-plugins$/i, '')
+  return clean
+}
+
+function joinPath(base, ...parts) {
+  const value = String(base || '')
+  const sep = value.includes('\\') ? '\\' : '/'
+  return [value.replace(/[\\/]+$/, ''), ...parts].join(sep)
+}
+
+function byteLength(text) {
+  const value = String(text || '')
+  try {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(value).length
+  } catch {}
+  return value.length
+}
+
+/** Compare ignoring the marker line and any trailing whitespace/newlines. */
+function normalizeForCompare(text) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .filter(line => !line.trimStart().startsWith('// synced copy of'))
+    .map(line => line.replace(/\s+$/, ''))
+  let start = 0
+  let end = lines.length
+  while (start < end && !lines[start]) start += 1
+  while (end > start && !lines[end - 1]) end -= 1
+  return lines.slice(start, end).join('\n')
+}
+
+function compareCopy(source, running) {
+  if (!source.ok) return { kind: 'noSource' }
+  if (!running.ok) return { kind: 'missing' }
+  const runningBytes = byteLength(running.text)
+  if (normalizeForCompare(source.text) === normalizeForCompare(running.text)) {
+    return { kind: 'synced', bytes: runningBytes }
+  }
+  return {
+    kind: 'pending',
+    bytes: runningBytes,
+    diff: Math.abs(byteLength(source.text) - runningBytes)
+  }
+}
+
+function formatBytes(value) {
+  if (!Number.isFinite(value)) return ''
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+function parseGitStatus(result) {
+  const stderr = String((result && result.stderr) || '')
+  const stdout = String((result && result.stdout) || '')
+  if (/not a git repository/i.test(stderr) || /not a git repository/i.test(stdout)) {
+    return { notGit: true }
+  }
+  if (result && typeof result.code === 'number' && result.code !== 0 && !stdout.trim()) {
+    return { notGit: true }
+  }
+  const [statusPart = '', logPart = ''] = stdout.split('@@SEP@@')
+  let branch = ''
+  let ahead = 0
+  let behind = 0
+  let dirty = 0
+  for (const line of statusPart.split(/\r?\n/)) {
+    if (line.startsWith('# branch.head ')) {
+      branch = line.slice('# branch.head '.length).trim()
+    } else if (line.startsWith('# branch.ab ')) {
+      const match = /\+(\d+)\s+-(\d+)/.exec(line)
+      if (match) {
+        ahead = Number(match[1])
+        behind = Number(match[2])
+      }
+    } else if (/^[12u?] /.test(line)) {
+      dirty += 1
+    }
+  }
+  return { notGit: false, branch, ahead, behind, dirty, last: logPart.trim() }
+}
+
+async function readMaybeText(path) {
+  const desktop = bridge()
+  if (!desktop || typeof desktop.readFileText !== 'function' || !path) return { ok: false }
+  try {
+    // hermes:readFileText answers `{ text, byteSize, truncated }` — treating it as
+    // a bare string made every read look like a missing file ("源缺失").
+    const res = await desktop.readFileText(path)
+    if (typeof res === 'string') return { ok: true, text: res }
+    if (res && typeof res.text === 'string') {
+      return { ok: true, text: res.text, truncated: Boolean(res.truncated), byteSize: res.byteSize }
+    }
+    return { ok: false }
+  } catch {
+    return { ok: false }
+  }
+}
+
+/** Branch + commit straight out of `.git` — no command execution needed. */
+async function readGitHead(dir) {
+  const head = await readMaybeText(joinPath(dir, '.git', 'HEAD'))
+  if (!head.ok) return null
+  const raw = head.text.trim()
+  const ref = /^ref:\s*(.+)$/.exec(raw)
+  if (!ref) return raw ? { branch: '', sha: raw.slice(0, 7) } : null
+  const refPath = ref[1]
+  const branch = refPath.startsWith('refs/heads/') ? refPath.slice('refs/heads/'.length) : refPath
+  const sha = await readMaybeText(joinPath(dir, '.git', refPath))
+  return { branch, sha: sha.ok ? sha.text.trim().slice(0, 7) : '' }
+}
+
+// ---------------------------------------------------------------------------
 // page
 // ---------------------------------------------------------------------------
 
@@ -562,6 +748,15 @@ function ManagerPage() {
   const [installRef, setInstallRef] = useState('')
   const [inspect, setInspect] = useState({ status: 'idle' })
   const [installingHalf, setInstallingHalf] = useState('')
+  const [devCache, setDevCache] = useState({})
+  const devCacheRef = useRef({})
+  const [syncingName, setSyncingName] = useState('')
+
+  const setDev = useCallback((name, entry) => {
+    const next = { ...devCacheRef.current, [name]: entry }
+    devCacheRef.current = next
+    setDevCache(next)
+  }, [])
 
   const readDesktopDirs = useCallback(async () => {
     try {
@@ -599,6 +794,105 @@ function ManagerPage() {
     void refresh()
   }, [refresh])
 
+  const notify = useCallback((kind, message) => {
+    try {
+      host.notify({ kind, message })
+    } catch {}
+  }, [])
+
+  const loadDev = useCallback(
+    async (row, force = false) => {
+      const name = row.name
+      if (!force && devCacheRef.current[name]) return
+      setDev(name, { status: 'loading' })
+      try {
+        const desktop = bridge()
+        let root = ''
+        if (desktop && typeof desktop.desktopPluginsRoot === 'function') {
+          try {
+            root = await desktop.desktopPluginsRoot()
+          } catch {
+            root = ''
+          }
+        }
+        const appRoot = appRootOf(root)
+        const nameOk = isSafeName(name)
+        const dir = String(row.install_dir || '')
+        const targetDir = appRoot && nameOk ? joinPath(appRoot, 'desktop-plugins', name) : ''
+        const sourcePath = dir ? joinPath(dir, 'desktop', 'plugin.js') : ''
+        const runningPath = targetDir ? joinPath(targetDir, 'plugin.js') : ''
+        const packagePath = targetDir ? joinPath(targetDir, '.hermes-package.json') : ''
+        const dirOk = isSafeShellPath(dir)
+
+        const [head, source, running, pkg] = await Promise.all([
+          dir ? readGitHead(dir).catch(() => null) : Promise.resolve(null),
+          readMaybeText(sourcePath),
+          readMaybeText(runningPath),
+          readMaybeText(packagePath)
+        ])
+
+        // `shell.exec` is not callable from a desktop plugin (the gateway answers
+        // invalid_params), so dirty/ahead counts are out of reach here: branch and
+        // commit come from `.git`, the rest of the dev picture from file reads.
+        const git = !dirOk ? { badPath: true } : head || { notGit: true }
+
+        const copy = runningPath ? compareCopy(source, running) : { kind: 'error', error: t('devBadPath') }
+        setDev(name, { status: 'ready', git, copy, claimed: Boolean(pkg.ok) })
+      } catch (error) {
+        setDev(name, { status: 'error', error: errorMessage(error) })
+      }
+    },
+    [setDev, t]
+  )
+
+  const syncRow = useCallback(
+    async row => {
+      const name = row.name
+      if (syncingName) return
+      const desktop = bridge()
+      let root = ''
+      if (desktop && typeof desktop.desktopPluginsRoot === 'function') {
+        try {
+          root = await desktop.desktopPluginsRoot()
+        } catch {
+          root = ''
+        }
+      }
+      const appRoot = appRootOf(root)
+      if (!isSafeShellPath(row.install_dir) || !isSafeShellPath(appRoot) || !isSafeName(name)) {
+        setDev(name, { ...(devCacheRef.current[name] || {}), syncError: t('devBadPath') })
+        return
+      }
+      const source = joinPath(row.install_dir, 'desktop', 'plugin.js')
+      const target = joinPath(appRoot, 'desktop-plugins', name, 'plugin.js')
+      setSyncingName(name)
+      try {
+        // `copy` fails when the target folder does not exist yet; creating it
+        // first is also how a plugin that never had a running copy gets one.
+        await host
+          .request('shell.exec', { command: `cmd /c mkdir "${joinPath(appRoot, 'desktop-plugins', name)}"` }, 35000)
+          .catch(() => null)
+        const copyCommand = `cmd /c copy /y "${source}" "${target}"`
+        const touchCommand = `cmd /c echo.>>"${target}"`
+        const copied = await host.request('shell.exec', { command: copyCommand }, 35000)
+        if (!copied || (typeof copied.code === 'number' && copied.code !== 0)) {
+          throw new Error((copied && (copied.stderr || copied.error)) || 'copy failed')
+        }
+        const touched = await host.request('shell.exec', { command: touchCommand }, 35000)
+        if (!touched || (typeof touched.code === 'number' && touched.code !== 0)) {
+          throw new Error((touched && (touched.stderr || touched.error)) || 'append failed')
+        }
+        notify('success', t('devSyncedToast'))
+        await loadDev(row, true)
+      } catch (error) {
+        setDev(name, { ...(devCacheRef.current[name] || {}), syncError: errorMessage(error) })
+      } finally {
+        setSyncingName('')
+      }
+    },
+    [loadDev, notify, setDev, syncingName, t]
+  )
+
   useEffect(() => {
     let alive = true
     const desktop = bridge()
@@ -614,7 +908,9 @@ function ManagerPage() {
   }, [])
 
   useEffect(() => {
-    prefs = { filter }
+    // Keep `v`: without it the next load sees an unversioned record and throws
+    // the user's filter away on every launch.
+    prefs = { filter, v: PREFS_VERSION }
     writeStored(PREFS_KEY, prefs)
   }, [filter])
 
@@ -650,6 +946,15 @@ function ManagerPage() {
     }
     return merged.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
   }, [rows, desktopDirs])
+
+  /** Only the expanded row pays for git; everything else stays unread. */
+  useEffect(() => {
+    if (!openId) return
+    const row = allRows.find(item => rowKeyOf(item) === openId)
+    if (!row || !row.has_desktop_half || !row.install_dir) return
+    if (devCacheRef.current[row.name]) return
+    void loadDev(row)
+  }, [allRows, loadDev, openId])
 
   /** Two sections: everything the user brought in, then the built-ins. */
   const mineRows = useMemo(() => allRows.filter(row => row.source !== 'bundled'), [allRows])
@@ -694,12 +999,6 @@ function ManagerPage() {
   const filtering = filter !== 'all' || Boolean(query.trim())
 
   const versionWarn = versionParts(appVersion) && !satisfies(`>=${MIN_HERMES}`, appVersion)
-
-  const notify = useCallback((kind, message) => {
-    try {
-      host.notify({ kind, message })
-    } catch {}
-  }, [])
 
   const revealPath = useCallback(
     path => {
@@ -1007,6 +1306,161 @@ function ManagerPage() {
     })
   }
 
+  const devPanel = row => {
+    const state = devCache[row.name]
+    const loading = !state || state.status === 'loading'
+    const ready = Boolean(state && state.status === 'ready')
+    const failed = Boolean(state && state.status === 'error')
+    const git = (state && state.git) || {}
+    const copy = (state && state.copy) || {}
+    const canSync = isSafeShellPath(row.install_dir) && isSafeName(row.name)
+
+    let gitNode
+    if (loading) {
+      gitNode = jsxs('span', {
+        className: `inline-flex items-center gap-1 ${MUTED}`,
+        children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { children: t('devLoading') }, 'text')]
+      })
+    } else if (failed) {
+      gitNode = jsx('span', { className: DANGER, children: state.error }, 'error')
+    } else if (git.badPath) {
+      gitNode = jsx('span', { className: DANGER, children: t('devBadPath') }, 'bad-path')
+    } else if (git.error) {
+      gitNode = jsx('span', { className: DANGER, children: git.error }, 'git-error')
+    } else if (git.notGit) {
+      gitNode = jsx('span', { className: MUTED, children: t('devNotGit') }, 'not-git')
+    } else if (!git.branch && !git.dirty && !git.ahead && !git.behind && !git.last) {
+      gitNode = jsx('span', { className: MUTED, children: '—' }, 'empty-git')
+    } else {
+      const parts = []
+      const sep = () => {
+        if (parts.length) parts.push(jsx('span', { className: MUTED, children: ' · ' }, `sep-${parts.length}`))
+      }
+      if (git.branch) {
+        sep()
+        parts.push(jsx('span', { children: `${t('devGitBranch')}: ${git.branch}` }, `branch-${parts.length}`))
+      }
+      if (git.dirty) {
+        sep()
+        parts.push(jsx('span', { children: t('devGitDirty', git.dirty) }, `dirty-${parts.length}`))
+      }
+      if (git.ahead || git.behind) {
+        sep()
+        parts.push(jsx('span', { children: t('devGitAhead', git.ahead || 0, git.behind || 0) }, `ab-${parts.length}`))
+      }
+      if (git.last) {
+        sep()
+        parts.push(jsx('span', { title: t('devGitLast'), children: git.last }, `last-${parts.length}`))
+      }
+      gitNode = jsxs('span', { className: 'flex min-w-0 flex-wrap items-center', children: parts }, 'git')
+    }
+
+    let copyText = ''
+    let copyDanger = false
+    if (ready) {
+      if (copy.kind === 'synced') {
+        copyText = [t('devCopySynced'), formatBytes(copy.bytes)].filter(Boolean).join(' · ')
+      } else if (copy.kind === 'pending') {
+        copyDanger = true
+        copyText = [
+          t('devCopyPending'),
+          formatBytes(copy.bytes),
+          copy.diff ? `Δ ${formatBytes(copy.diff)}` : ''
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      } else if (copy.kind === 'noSource') {
+        copyText = t('devCopyNoSource')
+      } else if (copy.kind === 'missing') {
+        copyText = t('devCopyMissing')
+      } else {
+        copyDanger = true
+        copyText = copy.error || t('devBadPath')
+      }
+    }
+
+    // Copying into the app's `desktop-plugins` needs a shell, and `shell.exec` is
+    // not callable from a desktop plugin (the gateway answers invalid_params), so
+    // the sync button stays hidden until that is solved agent-side.
+    const syncable = false
+    const syncing = syncingName === row.name
+    const rereadButton = jsx(
+      Button,
+      {
+        size: 'xs',
+        variant: 'ghost',
+        type: 'button',
+        disabled: loading || syncing,
+        onClick: () => loadDev(row, true),
+        children: t('devReread')
+      },
+      'reread'
+    )
+
+    return jsxs('div', {
+      className: 'mt-2',
+      children: jsxs('div', {
+        className: cn('grid grid-cols-[7rem_1fr] gap-y-1.5', CAPTION),
+        style: { gridTemplateColumns: '7rem 1fr' },
+        children: [
+          jsx('span', { className: GRID_LABEL, children: t('devState') }, 'dev-label'),
+          jsxs('div', {
+            className: 'flex min-w-0 flex-col gap-1',
+            children: [
+              gitNode,
+              jsxs('div', {
+                className: 'flex min-w-0 flex-wrap items-center gap-2',
+                children: [
+                  ready && copyText
+                    ? jsxs('span', {
+                        className: 'min-w-0',
+                        children: [
+                          jsx('span', { className: MUTED, children: `${t('devRunCopy')}: ` }, 'label'),
+                          jsx('span', { className: copyDanger ? DANGER : undefined, children: copyText }, 'value')
+                        ]
+                      }, 'copy-status')
+                    : null,
+                  syncable
+                    ? jsx(
+                        Button,
+                        {
+                          size: 'xs',
+                          variant: 'outline',
+                          type: 'button',
+                          disabled: !canSync || syncing,
+                          onClick: () => syncRow(row),
+                          children: syncing
+                            ? jsxs('span', {
+                                className: 'inline-flex items-center gap-1',
+                                children: [
+                                  jsx(GlyphSpinner, {}, 'spinner'),
+                                  jsx('span', { children: t('devLoading') }, 'text')
+                                ]
+                              })
+                            : t('syncToApp')
+                        },
+                        'sync'
+                      )
+                    : null,
+                  rereadButton
+                ]
+              }, 'copy-line'),
+              !canSync && !git.badPath
+                ? jsx('div', { className: DANGER, children: t('devBadPath') }, 'bad-path-note')
+                : null,
+              ready && state.claimed
+                ? jsx('div', { className: DANGER, children: t('devCopyClaimed') }, 'claimed')
+                : null,
+              ready && state.syncError
+                ? jsx('div', { className: DANGER, children: state.syncError }, 'sync-error')
+                : null
+            ]
+          }, 'dev-value')
+        ]
+      })
+    })
+  }
+
   const renderRow = row => {
     const id = rowKeyOf(row)
     const isOpen = openId === id
@@ -1112,6 +1566,7 @@ function ManagerPage() {
                     : null
                 ]
               }, 'path-line'),
+              row.has_desktop_half && row.install_dir ? devPanel(row) : null,
               jsxs('div', {
                 className: 'mt-2 flex flex-wrap items-center gap-2',
                 children: [
