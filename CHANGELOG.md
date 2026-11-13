@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0 — 2026-11-13
+
+**转向：目录浏览器 → 自用插件管理器。** 不再抓远程 `plugins.json`、不再调模型翻译、不再有排行/星级/截图/分页 —— 那些为「逛商店」服务的功能整套删掉。页面只读本机，管已装的插件。
+
+- **行式列表**：名称、版本、来源（内置 / 自己装的）、固定 SHA、agent 半边（已装·启用/停用）、desktop 半边（有/无）、可更新标记；右侧开关 + 详情。
+- **筛选**：全部 / 已启用 / 已停用 / 有桌面半边 / 有更新 + 按名字过滤（客户端 `includes`）。
+- **全部更新**：`plugins.manage update_all`，逐项结果。
+- **更新**：`update`，并且**真的处理两类拒绝** —— `consent_required`（列 `delta_lines`，确认后带 `accept_capabilities` 重试）、`scan_blocked`（显示 `scan_verdict`/`scan_findings`，caution 档可带 `force` 重试）。
+- **从 Git 安装**：`inspect` 先看源里有哪半边 → `install`（agent）/ `install_desktop`（只装桌面半边）。
+- **卸载**：`remove`（agent 半边）/ `remove_desktop`（只卸桌面半边）；提示「重启网关后完全生效」。
+- **详情**：安装路径 + 打开目录、key、来源、版本、固定 SHA、可升级目标、复制对应 `hermes plugins …` 命令。
+- 版本门槛从「每一行都挂一个 需 ≥0.22.5」改成**顶部一条**（低于门槛才显示），因为后端 list 行里没有逐插件的 `requires_hermes`。
+- 列表失败不再吞：红字带原始 message。
+
 ## 1.3.1 — 2026-10-28
 
 - **修「只看已安装」一直是 0。** 0.22 的 `plugins.manage` 是 _scoped RPC：`profile` 参数的意思是「切到**另一个** profile 的 HERMES_HOME 去读」。我们一直把 `host.state.focusedSessionProfile` 传进去，而它在 socket 挂在 default 后端时会归一化成 `'default'`，于是列的是 `E:\Hermes\core`（默认 profile）的插件表 —— 那里没有用户插件，结果就是 0 条。现在 list / toggle / install / remove 四处**都不再传 `profile`**，后端就待在自己真正服务的那个 profile 里。

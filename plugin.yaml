@@ -1,22 +1,17 @@
 name: cn-plugins-market
-version: "1.3.1"
+version: "2.0.0"
 description: >-
-  Browse the Hermes plugin catalog inside the Desktop app, in your own
-  language. Adds a catalog page that ranks the curated catalog four ways
-  (most starred / recently updated / newly listed / most capable), installs a
-  plugin with one click, updates installed catalog entries in one click, flags
-  entries that need a newer Hermes, expands a card to show its version,
-  platforms, maintainer, install command, required env vars, tools/hooks,
-  screenshots and links, and translates any plugin's blurb into the language
-  you pick — each blurb translated once and cached, so repeat browsing costs
-  nothing. Search understands common Chinese intents (记忆, 语音, 图片, …) by
-  mapping them to English catalog keywords, entirely locally. Read-only against
-  the public catalog; the only model call is an explicit per-entry translation
-  on whatever provider you already have active.
-  在 Hermes 桌面端用中文浏览并翻译官方插件目录：四档排行、一键安装、一键升级已装插件、
-  标出版本门槛；卡片可展开看版本、平台、维护者、安装命令、环境变量、工具/钩子、截图和链接；
-  支持中文检索（把「记忆」「语音」「图片」等意图映射到英文关键词，纯本地不调模型）；
-  每条简介翻译一次即永久缓存，之后浏览不再花钱；只读目录，唯一会调模型的动作是你手动点的翻译。
+  Manage the plugins installed on this machine inside the Desktop app. Adds a
+  compact line-per-plugin page with a status line and filters, enable/disable
+  switches, per-plugin and bulk updates (including the capability-consent and
+  security-scan review steps), uninstall for the agent half and for standalone
+  desktop halves, installing from a Git repository after a read-only inspect,
+  and an expandable detail row with install path, key, source, version, pinned
+  SHA and update target. No remote catalog, no translation, no ranking.
+  在 Hermes 桌面端管理本机已安装的插件：行式列表、状态统计与筛选、启用/停用开关、
+  单个与全部更新（含能力变更确认和扫描拦截的处理）、卸载 agent 半边或独立桌面半边、
+  从 Git 仓库先 inspect 再安装，以及可展开的详情行（安装路径、key、来源、版本、固定 SHA、
+  升级目标）。不再抓取远程目录，不再翻译，不再排行。
 author: krintcal
 kind: standalone
 platforms:
