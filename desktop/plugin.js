@@ -463,6 +463,10 @@ const PREFS_VERSION = 2
 let prefs = { filter: 'all', v: PREFS_VERSION }
 /** `mine` starts open, `bundled` starts folded; both persist under `sections`. */
 let sections = { mine: true, bundled: false }
+/** Last successful `plugins.manage list` — the gateway needs ~3 s for 73 plugins,
+ *  so the page paints this immediately and refreshes behind it. */
+const ROWS_CACHE_KEY = 'rows.v1'
+let rowsCache = { at: 0, plugins: [] }
 
 function readStored(key) {
   try {
@@ -505,6 +509,10 @@ function hydrate() {
   }
   // Persist the sanitised values so a stale key never comes back on next reload.
   writeStored(PREFS_KEY, prefs)
+  const cached = readStored(ROWS_CACHE_KEY)
+  if (cached && Array.isArray(cached.plugins)) {
+    rowsCache = { at: Number(cached.at) || 0, plugins: cached.plugins }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -725,8 +733,8 @@ function ManagerPage() {
     syncNavLabel(pluginCtx)
   }, [locale])
 
-  const [rows, setRows] = useState([])
-  const [status, setStatus] = useState('loading')
+  const [rows, setRows] = useState(() => rowsCache.plugins)
+  const [status, setStatus] = useState(() => (rowsCache.plugins.length ? 'ready' : 'loading'))
   const [loadError, setLoadError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [desktopDirs, setDesktopDirs] = useState(() => new Set())
@@ -781,10 +789,15 @@ function ManagerPage() {
       setRows(res.plugins)
       setLoadError('')
       setStatus('ready')
+      // Stale-while-revalidate: next open paints these instead of the spinner.
+      rowsCache = { at: Date.now(), plugins: res.plugins }
+      writeStored(ROWS_CACHE_KEY, rowsCache)
     } catch (e) {
-      setRows([])
+      // A failed refresh keeps the last good rows on screen — wiping them turns a
+      // network hiccup into "I have no plugins".
+      if (!rowsCache.plugins.length) setRows([])
       setLoadError(errorMessage(e))
-      setStatus('error')
+      setStatus(rowsCache.plugins.length ? 'ready' : 'error')
     }
     setDesktopDirs(await readDesktopDirs())
     setRefreshing(false)
@@ -1865,7 +1878,9 @@ function ManagerPage() {
                       'div',
                       {
                         className: cn('truncate', CAPTION, MUTED),
-                        children: t('statusLine', counts.mine, counts.bundled, allUpdates)
+                        children: refreshing
+                          ? `${t('statusLine', counts.mine, counts.bundled, allUpdates)} · ${t('loading')}`
+                          : t('statusLine', counts.mine, counts.bundled, allUpdates)
                       },
                       'status'
                     ),
