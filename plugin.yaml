@@ -1,14 +1,14 @@
 name: cn-plugins-market
-version: "2.0.0"
+version: "2.1.0"
 description: >-
-  Manage the plugins installed on this machine inside the Desktop app. Adds a
-  compact line-per-plugin page with a status line and filters, enable/disable
-  switches, per-plugin and bulk updates (including the capability-consent and
+  Manage the plugins installed on this machine inside the Desktop app. Adds two
+  sections (yours first, built-ins folded) with a status line and filters,
+  enable/disable switches, per-plugin and bulk updates (including the capability-consent and
   security-scan review steps), uninstall for the agent half and for standalone
   desktop halves, installing from a Git repository after a read-only inspect,
   and an expandable detail row with install path, key, source, version, pinned
   SHA and update target. No remote catalog, no translation, no ranking.
-  在 Hermes 桌面端管理本机已安装的插件：行式列表、状态统计与筛选、启用/停用开关、
+  在 Hermes 桌面端管理本机已安装的插件：分「我的插件」与「内置」两组、状态统计与筛选、启用/停用开关、
   单个与全部更新（含能力变更确认和扫描拦截的处理）、卸载 agent 半边或独立桌面半边、
   从 Git 仓库先 inspect 再安装，以及可展开的详情行（安装路径、key、来源、版本、固定 SHA、
   升级目标）。不再抓取远程目录，不再翻译，不再排行。

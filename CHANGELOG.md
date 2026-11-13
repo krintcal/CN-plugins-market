@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.0 — 2026-11-13
+
+**信息架构 + 视觉重做。** 功能逻辑（list / toggle / update / update_all / remove / remove_desktop / inspect / install / install_desktop、consent 与 scan 流程、错误红字）一行没动，只改分组和外观。
+
+- **两组，默认收起内置**：`我的插件`（`source !== 'bundled'`）默认展开，`内置`默认折叠并在组头显示数量；组头整行可点，折叠状态写进 prefs 的 `sections`。
+- **一眼看到自己的**：顶部状态行改成 `13 个自己的 · 63 个内置 · 2 个有更新`；筛选芯片与搜索**只作用于「我的插件」**，不再把 63 个内置一起筛出来。
+- **来源徽标分档**：`git*` → Git、`catalog*` → 装自目录、`user` → 本地；内置组省略徽标。
+- **窄容器 + sticky 工具栏**：`max-w-3xl` 居中，标题 + 状态行 + 全部更新 / 从 Git 安装 / 刷新图标；滚动时工具栏始终可见。
+- **行重排**：状态点 + 名称 + 版本 + 来源徽标 + 固定 SHA；第二行 `已启用 · 桌面半边 · 有更新`；右侧只在有更新时出现「更新」，有 `key` 才出现开关，末尾是展开详情的 `›`。
+- **详情面板**：两列网格（Key / 来源 / 版本 / 桌面半边 / 固定 SHA / 升级目标）+ 单独一行的路径（复制路径、打开目录）+ 卸载与复制命令；展开按钮带 `aria-expanded`。
+- **空态与错误条**：筛选后无结果时显示「没有符合条件的插件」+「清除筛选」；加载/动作/单行/安装失败统一成细红条。
+- **i18n**：新增 `mineGroup`、`bundledGroup`、`sourceGit`、`sourceCatalog`、`sourceLocal`、`emptyFiltered`、`clearFilters`、`copyPath`、`copied`、`expandRow`、`collapseRow`；删掉 `requiresVersion`、`agentNone`、`agentInstalled`、`details`、`hideDetails`、`sourceUser`、`sourceDesktop`、`noResult`、`noResultHint`（三语言各 104 → 106 键）。
+- **首屏被旧偏好坑住**：`prefs` 里 1.x 存的 `filter: 'disabled'` 会被原样复原，一进来只剩一行停用插件 —— 现在加了 `PREFS_VERSION`，版本不符就整套丢弃并回 `all`。
+- **开关看不出开没开**：插件文件的类名不在 App 编译后的 CSS 里，原来那套 `data-[state=checked]:…` 根本没生效，开着的插件显示成灰关；现在用 SDK 的 `Switch size="xs"` + 内联强调色（`var(--ui-accent, #7c5cff)`），开=紫色轨道。
+
 ## 2.0.0 — 2026-11-13
 
 **转向：目录浏览器 → 自用插件管理器。** 不再抓远程 `plugins.json`、不再调模型翻译、不再有排行/星级/截图/分页 —— 那些为「逛商店」服务的功能整套删掉。页面只读本机，管已装的插件。

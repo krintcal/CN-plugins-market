@@ -16,7 +16,6 @@ import {
   cn,
   ConfirmDialog,
   CopyButton,
-  EmptyState,
   GlyphSpinner,
   haptic,
   host,
@@ -38,16 +37,27 @@ const PREFS_KEY = 'prefs'
 const REF_RE = /^[0-9a-f]{40}$/i
 const FILTERS = ['all', 'enabled', 'disabled', 'desktop', 'updates']
 
-const SWITCH_CLASS =
-  'shrink-0 border border-(--ui-border) bg-(--ui-bg-quaternary) ' +
-  'data-[state=checked]:border-[var(--ui-accent,#2f6fed)] ' +
-  'data-[state=checked]:bg-[var(--ui-accent,#2f6fed)]'
 const INPUT_CLASS =
-  'h-7 rounded-md border border-(--ui-border) bg-(--ui-bg-input) px-2 text-xs outline-none'
+  'h-7 rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-input) px-2 outline-none ' +
+  'text-[length:var(--conversation-caption-font-size)]'
 const ROW_CLASS =
-  'border-b border-(--ui-border) px-3 py-2 transition-colors last:border-b-0 hover:bg-(--ui-bg-quaternary)'
+  '-mx-2 flex flex-col rounded-md border-b border-(--ui-stroke-tertiary) px-2 py-2.5 ' +
+  'transition-colors hover:bg-accent/40'
+const BADGE_CLASS =
+  'shrink-0 rounded border border-(--ui-stroke-tertiary) px-1.5 py-px ' +
+  'text-[0.65rem] text-(--ui-text-tertiary)'
+const GROUP_CLASS =
+  'flex w-full items-center gap-2 py-2 uppercase tracking-wide ' +
+  'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-quaternary)'
+const PANEL_CLASS =
+  'flex flex-col gap-2 rounded-lg border border-(--ui-stroke-tertiary) p-3'
+const ERROR_BAR =
+  'rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 ' +
+  'text-[length:var(--conversation-caption-font-size)] text-destructive'
+const GRID_LABEL = 'text-(--ui-text-tertiary)'
+const CAPTION = 'text-[length:var(--conversation-caption-font-size)]'
 const MUTED = 'text-(--ui-text-tertiary)'
-const DANGER = 'text-(--ui-danger)'
+const DANGER = 'text-destructive'
 
 // ---------------------------------------------------------------------------
 // i18n
@@ -57,8 +67,10 @@ const MESSAGES = {
   en: {
     nav: 'Plugin manager',
     title: 'Plugin manager',
-    statusLine: (total, enabled, updates) =>
-      `${total} installed · ${enabled} enabled · ${updates} update${updates === 1 ? '' : 's'}`,
+    statusLine: (mine, bundled, updates) =>
+      `${mine} mine · ${bundled} built-in · ${updates} update${updates === 1 ? '' : 's'}`,
+    mineGroup: 'My plugins',
+    bundledGroup: 'Built-in',
     refresh: 'Refresh',
     updateAll: 'Update all',
     updatingAll: 'Updating all…',
@@ -100,28 +112,26 @@ const MESSAGES = {
     filterUpdates: n => `Updates ${n}`,
     empty: 'No installed plugins',
     emptyHint: 'Install one from Git, or check that the gateway is connected.',
-    noResult: 'No matches',
-    noResultHint: 'Try part of the plugin name.',
+    emptyFiltered: 'No plugins match this filter.',
+    clearFilters: 'Clear filters',
     sourceBundled: 'Built-in',
-    sourceUser: 'Mine',
-    sourceDesktop: 'Desktop half',
+    sourceGit: 'Git',
+    sourceCatalog: 'From catalog',
+    sourceLocal: 'Local',
     sourceLabel: 'Source',
     portableBadge: 'Portable',
     portableTip: 'Agent Plugins v1 format — it can be moved to another Hermes as-is.',
     pinnedBadge: sha => `Pinned @ ${sha}`,
     pinnedTip: 'It will not follow updates until it is re-pinned.',
-    agentInstalled: 'agent installed',
-    agentNone: 'no agent half',
     statusEnabled: 'enabled',
     statusDisabled: 'disabled',
-    desktopHas: 'desktop yes',
-    desktopNone: 'desktop no',
-    requiresVersion: version => `needs ≥${version}`,
+    desktopHas: 'yes',
+    desktopNone: 'no',
     requiresVersionWarn: version => `needs ≥${version} (this app is older)`,
     update: 'Update',
     updating: 'Updating…',
-    details: 'Details',
-    hideDetails: 'Hide details',
+    expandRow: 'Show details',
+    collapseRow: 'Hide details',
     toggleAria: name => `Enable or disable ${name}`,
     enableTip: 'Enable',
     disableTip: 'Disable',
@@ -141,6 +151,8 @@ const MESSAGES = {
     stillUpdate: 'Update anyway',
     close: 'Close',
     detailPath: 'Install path',
+    copyPath: 'Copy path',
+    copied: 'Copied',
     openDir: 'Open folder',
     openDirFailed: 'Could not open that folder',
     keyLabel: 'Key',
@@ -167,7 +179,10 @@ const MESSAGES = {
   zh: {
     nav: '插件管理',
     title: '插件管理',
-    statusLine: (total, enabled, updates) => `共 ${total} 个 · 启用 ${enabled} · 有更新 ${updates}`,
+    statusLine: (mine, bundled, updates) =>
+      `${mine} 个自己的 · ${bundled} 个内置 · ${updates} 个有更新`,
+    mineGroup: '我的插件',
+    bundledGroup: '内置',
     refresh: '刷新',
     updateAll: '全部更新',
     updatingAll: '全部更新中…',
@@ -209,28 +224,26 @@ const MESSAGES = {
     filterUpdates: n => `有更新 ${n}`,
     empty: '还没有装插件',
     emptyHint: '可以从 Git 安装一个，或检查网关是否已连接。',
-    noResult: '没有匹配',
-    noResultHint: '试试插件名字的一部分。',
+    emptyFiltered: '没有符合条件的插件',
+    clearFilters: '清除筛选',
     sourceBundled: '内置',
-    sourceUser: '自己装的',
-    sourceDesktop: '桌面半边',
+    sourceGit: 'Git',
+    sourceCatalog: '装自目录',
+    sourceLocal: '本地',
     sourceLabel: '来源',
     portableBadge: '便携',
     portableTip: 'Agent Plugins v1 格式，可原样搬到别的 Hermes。',
     pinnedBadge: sha => `固定 @ ${sha}`,
     pinnedTip: '重新固定前不会跟随更新。',
-    agentInstalled: 'agent 已装',
-    agentNone: 'agent 无',
     statusEnabled: '已启用',
     statusDisabled: '已停用',
-    desktopHas: 'desktop 有',
-    desktopNone: 'desktop 无',
-    requiresVersion: version => `需 ≥${version}`,
+    desktopHas: '有',
+    desktopNone: '无',
     requiresVersionWarn: version => `需 ≥${version}（本机偏低）`,
     update: '更新',
     updating: '更新中…',
-    details: '详情',
-    hideDetails: '收起详情',
+    expandRow: '展开详情',
+    collapseRow: '收起详情',
     toggleAria: name => `启用或停用 ${name}`,
     enableTip: '启用',
     disableTip: '停用',
@@ -250,6 +263,8 @@ const MESSAGES = {
     stillUpdate: '仍然更新',
     close: '关闭',
     detailPath: '安装路径',
+    copyPath: '复制路径',
+    copied: '已复制',
     openDir: '打开目录',
     openDirFailed: '打不开这个目录',
     keyLabel: 'Key',
@@ -275,7 +290,10 @@ const MESSAGES = {
   'zh-hant': {
     nav: '外掛管理',
     title: '外掛管理',
-    statusLine: (total, enabled, updates) => `共 ${total} 個 · 啟用 ${enabled} · 有更新 ${updates}`,
+    statusLine: (mine, bundled, updates) =>
+      `${mine} 個自己的 · ${bundled} 個內建 · ${updates} 個有更新`,
+    mineGroup: '我的外掛',
+    bundledGroup: '內建',
     refresh: '重新整理',
     updateAll: '全部更新',
     updatingAll: '全部更新中…',
@@ -317,28 +335,26 @@ const MESSAGES = {
     filterUpdates: n => `有更新 ${n}`,
     empty: '還沒有安裝外掛',
     emptyHint: '可以從 Git 安裝一個，或檢查閘道是否已連線。',
-    noResult: '沒有符合',
-    noResultHint: '試試外掛名稱的一部分。',
+    emptyFiltered: '沒有符合條件的外掛',
+    clearFilters: '清除篩選',
     sourceBundled: '內建',
-    sourceUser: '自己裝的',
-    sourceDesktop: '桌面半邊',
+    sourceGit: 'Git',
+    sourceCatalog: '裝自目錄',
+    sourceLocal: '本機',
     sourceLabel: '來源',
     portableBadge: '便攜',
     portableTip: 'Agent Plugins v1 格式，可原樣搬到別的 Hermes。',
     pinnedBadge: sha => `固定 @ ${sha}`,
     pinnedTip: '重新固定前不會跟隨更新。',
-    agentInstalled: 'agent 已裝',
-    agentNone: 'agent 無',
     statusEnabled: '已啟用',
     statusDisabled: '已停用',
-    desktopHas: 'desktop 有',
-    desktopNone: 'desktop 無',
-    requiresVersion: version => `需 ≥${version}`,
+    desktopHas: '有',
+    desktopNone: '無',
     requiresVersionWarn: version => `需 ≥${version}（本機偏低）`,
     update: '更新',
     updating: '更新中…',
-    details: '詳情',
-    hideDetails: '收合詳情',
+    expandRow: '展開詳情',
+    collapseRow: '收合詳情',
     toggleAria: name => `啟用或停用 ${name}`,
     enableTip: '啟用',
     disableTip: '停用',
@@ -358,6 +374,8 @@ const MESSAGES = {
     stillUpdate: '仍然更新',
     close: '關閉',
     detailPath: '安裝路徑',
+    copyPath: '複製路徑',
+    copied: '已複製',
     openDir: '開啟目錄',
     openDirFailed: '無法開啟這個目錄',
     keyLabel: 'Key',
@@ -387,7 +405,13 @@ const MESSAGES = {
 // ---------------------------------------------------------------------------
 
 let pluginCtx = null
-let prefs = { filter: 'all' }
+/** Bumped when a stored preference stops meaning what it used to: an old filter
+ *  value from 1.x (e.g. 'disabled') would otherwise survive a redesign and hide
+ *  every row, which reads as "the page is broken". */
+const PREFS_VERSION = 2
+let prefs = { filter: 'all', v: PREFS_VERSION }
+/** `mine` starts open, `bundled` starts folded; both persist under `sections`. */
+let sections = { mine: true, bundled: false }
 
 function readStored(key) {
   try {
@@ -416,29 +440,25 @@ function writeStored(key, value) {
 
 function hydrate() {
   const stored = readStored(PREFS_KEY)
-  if (!stored || typeof stored !== 'object') return
-  prefs = { ...prefs, ...stored }
+  if (stored && typeof stored === 'object') {
+    // A version bump throws away the old choices instead of translating them.
+    prefs = stored.v === PREFS_VERSION ? { ...prefs, ...stored } : { filter: 'all', v: PREFS_VERSION }
+  }
   if (!FILTERS.includes(prefs.filter)) prefs.filter = 'all'
+  const storedSections = readStored('sections')
+  if (storedSections && typeof storedSections === 'object') {
+    sections = {
+      mine: storedSections.mine !== false,
+      bundled: storedSections.bundled === true
+    }
+  }
+  // Persist the sanitised values so a stale key never comes back on next reload.
+  writeStored(PREFS_KEY, prefs)
 }
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-/** A labelled row that simply doesn't exist when the field is empty. */
-function detailRow(label, value, key) {
-  return jsxs(
-    'div',
-    {
-      className: 'flex min-w-0 gap-2',
-      children: [
-        label ? jsx('span', { className: `w-24 shrink-0 ${MUTED}`, children: label }) : null,
-        jsx('div', { className: 'min-w-0 flex-1 break-words', children: value })
-      ]
-    },
-    key || label
-  )
-}
 
 /** Dotted numeric version segments; null when the string isn't one. */
 function versionParts(value) {
@@ -465,13 +485,6 @@ function satisfies(required, current) {
   return true
 }
 
-/** The labels already carry the `≥` glyph, so the raw operator is stripped. */
-function prettyRequirement(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^>=?\s*/, '')
-}
-
 /** Seven hex chars are enough to tell two revisions apart on a line. */
 function shortSha(sha) {
   return String(sha || '').slice(0, 7)
@@ -496,13 +509,23 @@ function extraDetails(value, t) {
 }
 
 function sourceKeyOf(row) {
-  if (row.source === 'bundled') return 'sourceBundled'
-  if (row.source === 'desktop') return 'sourceDesktop'
-  return 'sourceUser'
+  const source = String(row.source || '')
+  if (source.startsWith('git')) return 'sourceGit'
+  if (source.startsWith('catalog')) return 'sourceCatalog'
+  if (source === 'bundled') return 'sourceBundled'
+  return 'sourceLocal'
 }
 
 function rowKeyOf(row) {
   return row.key || `name:${row.name}`
+}
+
+/** Label/value pair for the detail panel's two-column grid. */
+function gridPair(label, value, key) {
+  return [
+    jsx('span', { className: GRID_LABEL, children: label }, `${key}-label`),
+    jsx('span', { className: 'min-w-0 break-words', children: value }, `${key}-value`)
+  ]
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +547,7 @@ function ManagerPage() {
   const [appVersion, setAppVersion] = useState('')
   const [filter, setFilter] = useState(prefs.filter)
   const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState(() => ({ ...sections }))
   const [openId, setOpenId] = useState('')
   const [busyName, setBusyName] = useState('')
   const [rowError, setRowError] = useState(null)
@@ -627,21 +651,37 @@ function ManagerPage() {
     return merged.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
   }, [rows, desktopDirs])
 
+  /** Two sections: everything the user brought in, then the built-ins. */
+  const mineRows = useMemo(() => allRows.filter(row => row.source !== 'bundled'), [allRows])
+  const bundledRows = useMemo(() => allRows.filter(row => row.source === 'bundled'), [allRows])
+
   const counts = useMemo(() => {
     let enabled = 0
     let updates = 0
     let desktop = 0
-    for (const row of allRows) {
+    for (const row of mineRows) {
       if (row.status === 'enabled') enabled += 1
       if (row.update_available) updates += 1
       if (row.has_desktop_half) desktop += 1
     }
-    return { total: allRows.length, enabled, updates, desktop }
-  }, [allRows])
+    return {
+      mine: mineRows.length,
+      bundled: bundledRows.length,
+      enabled,
+      updates,
+      desktop
+    }
+  }, [mineRows, bundledRows])
 
-  const filtered = useMemo(() => {
+  const allUpdates = useMemo(
+    () => allRows.filter(row => row.update_available).length,
+    [allRows]
+  )
+
+  /** Chips and search only narrow `mine`; the built-in section stays whole. */
+  const filteredMine = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return allRows.filter(row => {
+    return mineRows.filter(row => {
       if (needle && !String(row.name || '').toLowerCase().includes(needle)) return false
       if (filter === 'enabled') return row.status === 'enabled'
       if (filter === 'disabled') return row.status !== 'enabled'
@@ -649,7 +689,9 @@ function ManagerPage() {
       if (filter === 'updates') return Boolean(row.update_available)
       return true
     })
-  }, [allRows, filter, query])
+  }, [mineRows, filter, query])
+
+  const filtering = filter !== 'all' || Boolean(query.trim())
 
   const versionWarn = versionParts(appVersion) && !satisfies(`>=${MIN_HERMES}`, appVersion)
 
@@ -859,81 +901,101 @@ function ManagerPage() {
         },
         'aria-pressed': filter === id,
         className: cn(
-          'rounded-full px-2.5 py-1 text-xs transition-colors',
-          filter === id
-            ? 'bg-(--ui-bg-quaternary) font-medium text-(--ui-text-primary)'
-            : `${MUTED} hover:text-(--ui-text-primary)`
+          'rounded-full px-2.5 py-1 text-[length:var(--conversation-caption-font-size)] transition-colors',
+          filter === id ? 'bg-accent text-foreground' : 'text-(--ui-text-tertiary) hover:text-foreground'
         ),
         children: label
       },
       id
     )
 
+  const toggleSection = key => {
+    haptic('tap')
+    setExpanded(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      sections = next
+      writeStored('sections', next)
+      return next
+    })
+  }
+
+  const clearFilters = () => {
+    setFilter('all')
+    setQuery('')
+  }
+
   const inspectPanel = () => {
     if (inspect.status === 'idle') return null
     if (inspect.status === 'checking') {
       return jsxs('div', {
-        className: `flex items-center gap-2 text-xs ${MUTED}`,
-        children: [jsx(GlyphSpinner, {}), t('checking')]
+        className: `flex items-center gap-2 ${CAPTION} ${MUTED}`,
+        children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { children: t('checking') }, 'text')]
       })
     }
     if (inspect.status === 'error') {
       return jsxs('div', {
-        className: 'flex flex-col items-start gap-1 text-xs',
+        className: 'flex flex-col items-start gap-1.5',
         children: [
-          jsx('div', { className: DANGER, children: inspect.error }),
-          jsx(Button, {
-            size: 'xs',
-            variant: 'ghost',
-            type: 'button',
-            onClick: runInspect,
-            children: t('check')
-          })
+          jsx('div', { className: ERROR_BAR, children: inspect.error }, 'error'),
+          jsx(
+            Button,
+            { size: 'xs', variant: 'ghost', type: 'button', onClick: runInspect, children: t('check') },
+            'retry'
+          )
         ]
       })
     }
     const data = inspect.data || {}
     const warnings = Array.isArray(data.warnings) ? data.warnings : []
     const halfButton = (half, label, variant) =>
-      jsx(Button, {
-        size: 'xs',
-        variant,
-        type: 'button',
-        disabled: Boolean(installingHalf),
-        onClick: () => installHalf(half),
-        children:
-          installingHalf === half
-            ? jsxs('span', {
-                className: 'inline-flex items-center gap-1',
-                children: [jsx(GlyphSpinner, {}), t('installing')]
-              })
-            : label
-      })
+      jsx(
+        Button,
+        {
+          size: 'xs',
+          variant,
+          type: 'button',
+          disabled: Boolean(installingHalf),
+          onClick: () => installHalf(half),
+          children:
+            installingHalf === half
+              ? jsxs('span', {
+                  className: 'inline-flex items-center gap-1',
+                  children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { children: t('installing') }, 'text')]
+                })
+              : label
+        },
+        half
+      )
     return jsxs('div', {
-      className: 'flex flex-col gap-2 rounded-md border border-(--ui-border) p-2 text-xs',
+      className: cn(PANEL_CLASS, CAPTION),
       children: [
         jsxs('div', {
           className: 'flex flex-wrap items-center gap-2',
           children: [
-            jsx(Badge, {
-              variant: data.agent ? 'success' : 'muted',
-              size: 'xs',
-              children: `${data.agent ? '✓' : '—'} ${t('hasAgentHalf')}`
-            }),
-            jsx(Badge, {
-              variant: data.desktop ? 'success' : 'muted',
-              size: 'xs',
-              children: `${data.desktop ? '✓' : '—'} ${t('hasDesktopHalf')}`
-            }),
+            jsx(
+              Badge,
+              {
+                variant: data.agent ? 'success' : 'muted',
+                size: 'xs',
+                children: `${data.agent ? '✓' : '—'} ${t('hasAgentHalf')}`
+              },
+              'agent'
+            ),
+            jsx(
+              Badge,
+              {
+                variant: data.desktop ? 'success' : 'muted',
+                size: 'xs',
+                children: `${data.desktop ? '✓' : '—'} ${t('hasDesktopHalf')}`
+              },
+              'desktop'
+            ),
             data.sha
-              ? jsx('span', {
-                  className: MUTED,
-                  children: `${t('inspectSha')} ${shortSha(data.sha)}`
-                })
+              ? jsx('span', { className: MUTED, children: `${t('inspectSha')} ${shortSha(data.sha)}` }, 'sha')
               : null
           ]
         }),
-        warnings.length ? jsx('div', { className: DANGER, children: warnings.join(' · ') }) : null,
+        warnings.length ? jsx('div', { className: DANGER, children: warnings.join(' · ') }, 'warnings') : null,
         jsxs('div', {
           className: 'flex flex-wrap items-center gap-2',
           children: [
@@ -952,553 +1014,734 @@ function ManagerPage() {
     const sourceKey = sourceKeyOf(row)
     const enabled = row.status === 'enabled'
     const desktopOnly = Boolean(row.desktop_only)
-    const details = isOpen
-      ? [
-          detailRow(
-            t('detailPath'),
-            jsxs('div', {
-              className: 'flex min-w-0 items-center gap-2',
-              children: [
-                jsx('code', {
-                  className: 'min-w-0 flex-1 truncate font-mono',
-                  children: row.install_dir || '—'
-                }),
-                row.install_dir
-                  ? jsx(Button, {
-                      size: 'xs',
-                      variant: 'ghost',
-                      type: 'button',
-                      onClick: () => revealPath(row.install_dir),
-                      children: t('openDir')
-                    })
-                  : null
-              ]
-            }),
-            'path'
+
+    const facts = []
+    if (row.key) facts.push(enabled ? t('statusEnabled') : t('statusDisabled'))
+    if (row.has_desktop_half) facts.push(t('hasDesktopHalf'))
+    if (row.update_available) facts.push(t('updateAvailable'))
+
+    const keyedCells = [
+      ...gridPair(
+        t('keyLabel'),
+        jsx('code', { className: 'min-w-0 break-all font-mono', children: row.key || '—' }),
+        'key'
+      ),
+      ...gridPair(t('sourceLabel'), t(sourceKey), 'source'),
+      ...gridPair(t('versionLabel'), row.version ? `v${row.version}` : '—', 'version'),
+      ...gridPair(
+        t('hasDesktopHalf'),
+        row.has_desktop_half ? t('desktopHas') : t('desktopNone'),
+        'desktop'
+      )
+    ]
+    if (row.pinned_sha) {
+      keyedCells.push(
+        ...gridPair(
+          t('pinnedLabel'),
+          jsx('code', { className: 'min-w-0 break-all font-mono', children: shortSha(row.pinned_sha) }),
+          'pinned'
+        )
+      )
+    }
+    if (row.update_available) {
+      keyedCells.push(
+        ...gridPair(
+          t('upgradeLabel'),
+          t(
+            'upgradeValue',
+            row.catalog_version || '',
+            shortSha(row.update_target || row.catalog_sha)
           ),
-          detailRow(
-            t('keyLabel'),
-            jsx('code', { className: 'font-mono', children: row.key || '—' }),
-            'key'
-          ),
-          detailRow(t('sourceLabel'), t(sourceKey), 'source'),
-          detailRow(t('versionLabel'), row.version || '—', 'version'),
-          row.pinned_sha ? detailRow(t('pinnedLabel'), shortSha(row.pinned_sha), 'pinned') : null,
-          row.update_available
-            ? detailRow(
-                t('upgradeLabel'),
-                t(
-                  'upgradeValue',
-                  row.catalog_version || '',
-                  shortSha(row.update_target || row.catalog_sha)
+          'upgrade'
+        )
+      )
+    }
+
+    const panel = isOpen
+      ? jsxs(
+          'div',
+          {
+            className:
+              'mb-3 mt-1 ml-4 rounded-lg border border-(--ui-stroke-tertiary) ' +
+              'bg-(--ui-bg-secondary) p-3',
+            children: [
+              jsx('div', {
+                className: cn(
+                  'grid grid-cols-[7rem_1fr] gap-y-1.5',
+                  CAPTION
                 ),
-                'upgrade'
-              )
-            : null
-        ].filter(Boolean)
+                style: { gridTemplateColumns: '7rem 1fr' },
+                children: keyedCells
+              }, 'grid'),
+              jsxs('div', {
+                className: 'mt-2 flex min-w-0 items-center gap-2',
+                children: [
+                  jsx('span', { className: cn('shrink-0', GRID_LABEL), children: t('detailPath') }, 'label'),
+                  jsx(
+                    'code',
+                    {
+                      className: cn('min-w-0 flex-1 truncate font-mono', CAPTION),
+                      children: row.install_dir || '—'
+                    },
+                    'path'
+                  ),
+                  row.install_dir
+                    ? jsx(
+                        CopyButton,
+                        {
+                          appearance: 'inline',
+                          text: row.install_dir,
+                          label: t('copyPath'),
+                          onCopied: () => notify('success', t('copied'))
+                        },
+                        'copy-path'
+                      )
+                    : null,
+                  row.install_dir
+                    ? jsx(
+                        Button,
+                        {
+                          size: 'xs',
+                          variant: 'ghost',
+                          type: 'button',
+                          onClick: () => revealPath(row.install_dir),
+                          children: t('openDir')
+                        },
+                        'open-dir'
+                      )
+                    : null
+                ]
+              }, 'path-line'),
+              jsxs('div', {
+                className: 'mt-2 flex flex-wrap items-center gap-2',
+                children: [
+                  jsx(
+                    Button,
+                    {
+                      size: 'xs',
+                      variant: desktopOnly ? 'outline' : 'destructive',
+                      type: 'button',
+                      disabled: busy,
+                      onClick: () => setPendingRemove(row),
+                      children: desktopOnly ? t('uninstallDesktop') : t('uninstall')
+                    },
+                    'uninstall'
+                  ),
+                  jsx(
+                    CopyButton,
+                    {
+                      appearance: 'inline',
+                      text: `hermes plugins remove ${row.name}`,
+                      label: t('copyCommand')
+                    },
+                    'copy-command'
+                  )
+                ]
+              }, 'actions')
+            ]
+          },
+          'panel'
+        )
       : null
 
     return jsxs(
       'div',
       {
-        className: ROW_CLASS,
+        className: cn(ROW_CLASS, busy && 'pointer-events-none opacity-60'),
+        style: { marginLeft: '-0.5rem', marginRight: '-0.5rem' },
         children: [
           jsxs('div', {
-            className: 'flex min-w-0 flex-wrap items-center gap-2',
+            className: 'flex items-start gap-3',
             children: [
-              jsx('span', {
-                className: cn(
-                  'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-                  enabled ? 'bg-[#22c55e]' : 'bg-(--ui-text-tertiary)'
-                ),
-                'aria-hidden': true
+              jsxs('div', {
+                className: 'min-w-0 flex-1',
+                children: [
+                  jsxs('div', {
+                    className:
+                      'flex min-w-0 flex-wrap items-center gap-2 ' +
+                      'text-[length:var(--conversation-text-font-size)]',
+                    children: [
+                      jsx(
+                        'span',
+                        {
+                          className: cn(
+                            'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                            enabled ? 'bg-emerald-500' : 'bg-(--ui-text-tertiary)'
+                          ),
+                          'aria-hidden': true
+                        },
+                        'dot'
+                      ),
+                      jsx('span', { className: 'min-w-0 truncate font-medium', children: row.name }, 'name'),
+                      row.version
+                        ? jsx('span', { className: 'text-(--ui-text-quaternary)', children: `v${row.version}` }, 'version')
+                        : null,
+                      row.source !== 'bundled'
+                        ? jsx('span', { className: BADGE_CLASS, children: t(sourceKey) }, 'source')
+                        : null,
+                      row.portable
+                        ? jsx(
+                            Tip,
+                            {
+                              label: t('portableTip'),
+                              children: jsx('span', { className: BADGE_CLASS, children: t('portableBadge') })
+                            },
+                            'portable'
+                          )
+                        : null,
+                      row.pinned_sha
+                        ? jsx(
+                            Tip,
+                            {
+                              label: t('pinnedTip'),
+                              children: jsx('span', {
+                                className: cn(BADGE_CLASS, 'font-mono'),
+                                children: t('pinnedBadge', shortSha(row.pinned_sha))
+                              })
+                            },
+                            'pinned'
+                          )
+                        : null
+                    ]
+                  }),
+                  jsx(
+                    'div',
+                    {
+                      className:
+                        'mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 ' +
+                        'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-secondary)',
+                      children: facts.length ? facts.join(' · ') : null
+                    },
+                    'facts'
+                  )
+                ]
               }),
-              jsx('span', {
-                className: 'min-w-0 truncate text-sm font-medium',
-                children: row.name
-              }),
-              row.version
-                ? jsx('span', { className: `text-xs ${MUTED}`, children: `v${row.version}` })
-                : null,
-              jsx(Badge, {
-                size: 'xs',
-                variant: row.source === 'bundled' ? 'muted' : 'outline',
-                children: t(sourceKey)
-              }),
-              row.portable
-                ? jsx(Tip, {
-                    label: t('portableTip'),
-                    children: jsx('span', {
-                      className: 'inline-flex',
-                      children: jsx(Badge, {
-                        variant: 'muted',
-                        size: 'xs',
-                        children: t('portableBadge')
-                      })
-                    })
-                  })
-                : null,
-              row.pinned_sha
-                ? jsx(Tip, {
-                    label: t('pinnedTip'),
-                    children: jsx('span', {
-                      className: 'inline-flex',
-                      children: jsx(Badge, {
-                        variant: 'muted',
-                        size: 'xs',
-                        children: t('pinnedBadge', shortSha(row.pinned_sha))
-                      })
-                    })
-                  })
-                : null,
-              jsx('div', { className: 'flex-1' }),
-              row.key
-                ? jsx(Tip, {
-                    label: enabled ? t('disableTip') : t('enableTip'),
-                    children: jsx(Switch, {
-                      checked: enabled,
-                      disabled: busy,
-                      'aria-label': t('toggleAria', row.name),
-                      className: SWITCH_CLASS,
-                      onCheckedChange: next => toggleRow(row, next)
-                    })
-                  })
-                : null
-            ]
-          }),
-          jsxs('div', {
-            className: 'mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs',
-            children: [
-              jsx('span', {
-                className: MUTED,
-                children: desktopOnly
-                  ? t('agentNone')
-                  : `${t('agentInstalled')} · ${enabled ? t('statusEnabled') : t('statusDisabled')}`
-              }),
-              jsx('span', {
-                className: MUTED,
-                children: row.has_desktop_half ? t('desktopHas') : t('desktopNone')
-              }),
-              row.update_available
-                ? jsx('span', { className: MUTED, children: t('updateAvailable') })
-                : null,
-              jsx('div', { className: 'flex-1' }),
-              row.update_available
-                ? jsx(Button, {
-                    size: 'xs',
-                    variant: 'secondary',
-                    type: 'button',
-                    disabled: busy,
-                    onClick: () => runUpdate(row),
-                    children: busy ? t('updating') : t('update')
-                  })
-                : null,
-              jsx(Button, {
-                size: 'xs',
-                variant: 'ghost',
-                type: 'button',
-                'aria-expanded': isOpen,
-                onClick: () => {
-                  haptic('tap')
-                  setOpenId(prev => (prev === id ? '' : id))
-                },
-                children: isOpen ? t('hideDetails') : `${t('details')} ›`
+              jsxs('div', {
+                className: 'flex shrink-0 items-center gap-1.5',
+                children: [
+                  busy ? jsx(GlyphSpinner, {}, 'spinner') : null,
+                  !busy && row.update_available
+                    ? jsx(
+                        Button,
+                        {
+                          size: 'xs',
+                          variant: 'secondary',
+                          type: 'button',
+                          onClick: () => runUpdate(row),
+                          children: t('update')
+                        },
+                        'update'
+                      )
+                    : null,
+                  !busy && row.key
+                    ? jsx(
+                        Tip,
+                        {
+                          label: enabled ? t('disableTip') : t('enableTip'),
+                          children: jsx(Switch, {
+                            // No custom className: the app's Tailwind build never scans
+                            // this file, so invented utility classes don't exist in the
+                            // compiled CSS and the switch rendered as "off" while on.
+                            checked: enabled,
+                            size: 'xs',
+                            // The theme's checked track is nearly the same tone as the
+                            // page, so "on" was unreadable at a glance. Inline style, not
+                            // a utility class, because utility classes from here are not
+                            // in the compiled CSS.
+                            style: enabled ? { backgroundColor: 'var(--ui-accent, #7c5cff)' } : undefined,
+                            'aria-label': t('toggleAria', row.name),
+                            onCheckedChange: next => toggleRow(row, next)
+                          })
+                        },
+                        'switch'
+                      )
+                    : null,
+                  jsx(
+                    Button,
+                    {
+                      size: 'xs',
+                      variant: 'ghost',
+                      type: 'button',
+                      'aria-label': isOpen ? t('collapseRow') : t('expandRow'),
+                      'aria-expanded': isOpen,
+                      onClick: () => {
+                        haptic('tap')
+                        setOpenId(prev => (prev === id ? '' : id))
+                      },
+                      children: isOpen ? '▾' : '›'
+                    },
+                    'disclosure'
+                  )
+                ]
               })
             ]
           }),
           rowError && rowError.name === row.name
-            ? jsx('div', { className: `mt-1 text-xs ${DANGER}`, children: rowError.message })
+            ? jsx('div', { className: cn(ERROR_BAR, 'mt-1.5'), children: rowError.message }, 'row-error')
             : null,
-          isOpen
-            ? jsxs('div', {
-                className: 'mt-2 flex flex-col gap-1.5 border-t border-(--ui-border) pt-2 text-xs',
-                children: [
-                  ...details,
-                  jsxs('div', {
-                    className: 'mt-1 flex flex-wrap items-center gap-2',
-                    children: [
-                      jsx(Button, {
-                        size: 'xs',
-                        variant: desktopOnly ? 'outline' : 'destructive',
-                        type: 'button',
-                        disabled: busy,
-                        onClick: () => setPendingRemove(row),
-                        children: desktopOnly ? t('uninstallDesktop') : t('uninstall')
-                      }),
-                      jsx(CopyButton, {
-                        appearance: 'inline',
-                        text: `hermes plugins remove ${row.name}`,
-                        label: t('copyCommand')
-                      })
-                    ]
-                  })
-                ]
-              })
-            : null
+          panel
         ]
       },
       id
     )
   }
 
+  const groupHeader = (id, label, count) =>
+    jsxs(
+      'button',
+      {
+        type: 'button',
+        onClick: () => toggleSection(id),
+        'aria-expanded': Boolean(expanded[id]),
+        className: GROUP_CLASS,
+        children: [
+          jsx(
+            'span',
+            { className: 'w-3 shrink-0 text-center', 'aria-hidden': true, children: expanded[id] ? '▾' : '▸' },
+            'chevron'
+          ),
+          jsx('span', { className: 'min-w-0 flex-1 truncate text-left', children: label }, 'label'),
+          jsx(
+            'span',
+            { className: 'shrink-0 tabular-nums normal-case tracking-normal', children: count },
+            'count'
+          )
+        ]
+      },
+      id
+    )
+
+  const rowList = rows => jsx('div', { className: 'flex flex-col', children: rows.map(renderRow) }, 'rows')
+
+  const emptyBlock = (message, withClear) =>
+    jsxs(
+      'div',
+      {
+        className: 'py-12 text-center text-(--ui-text-tertiary)',
+        children: [
+          jsx('div', { className: CAPTION, children: message }, 'message'),
+          withClear
+            ? jsx(
+                Button,
+                {
+                  className: 'mt-2',
+                  size: 'xs',
+                  variant: 'ghost',
+                  type: 'button',
+                  onClick: clearFilters,
+                  children: t('clearFilters')
+                },
+                'clear'
+              )
+            : null
+        ]
+      },
+      'empty'
+    )
+
+  const mineBody = () => {
+    if (filteredMine.length) return rowList(filteredMine)
+    if (filtering) return emptyBlock(t('emptyFiltered'), true)
+    return emptyBlock(t('empty'), false)
+  }
+
   const body = () => {
     if (status === 'loading' && !allRows.length) {
       return jsxs('div', {
-        className: 'flex items-center gap-2 py-12 text-sm text-(--ui-text-tertiary)',
-        children: [jsx(GlyphSpinner, {}), t('loading')]
+        className: 'flex items-center justify-center gap-2 py-12 text-(--ui-text-tertiary)',
+        children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { className: CAPTION, children: t('loading') }, 'text')]
       })
     }
     if (status === 'error' && !allRows.length) {
       return jsxs('div', {
-        className: 'rounded-md border border-(--ui-danger) p-3 text-sm',
+        className: cn(ERROR_BAR, 'mt-3 flex flex-col items-start gap-2 py-3'),
         children: [
-          jsx('div', { children: t('loadFailed', loadError) }),
-          jsx(Button, {
-            className: 'mt-2',
-            size: 'sm',
-            variant: 'outline',
-            type: 'button',
-            onClick: refresh,
-            children: t('retry')
-          })
+          jsx('div', { children: t('loadFailed', loadError) }, 'message'),
+          jsx(
+            Button,
+            { size: 'xs', variant: 'outline', type: 'button', onClick: refresh, children: t('retry') },
+            'retry'
+          )
         ]
       })
     }
-    if (!filtered.length) {
-      return jsx(EmptyState, {
-        title: query.trim() ? t('noResult') : t('empty'),
-        description: query.trim() ? t('noResultHint') : t('emptyHint')
-      })
-    }
-    return jsx('div', {
-      className:
-        'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable] pr-2',
-      children: jsx('div', {
-        className: 'overflow-hidden rounded-md border border-(--ui-border)',
-        children: filtered.map(renderRow)
-      })
+    return jsxs('div', {
+      className: 'flex flex-col',
+      children: [
+        jsxs('section', {
+          className: 'mt-2',
+          children: [
+            groupHeader('mine', t('mineGroup'), mineRows.length),
+            expanded.mine ? mineBody() : null
+          ]
+        }, 'mine'),
+        bundledRows.length
+          ? jsxs('section', {
+              className: 'mt-4',
+              children: [
+                groupHeader('bundled', t('bundledGroup'), bundledRows.length),
+                expanded.bundled ? rowList(bundledRows) : null
+              ]
+            }, 'bundled')
+          : null
+      ]
     })
   }
 
   return jsxs('div', {
-    className: 'flex h-full min-w-0 min-h-0 flex-col gap-3 p-4',
-    children: [
-      jsxs('div', {
-        className: 'flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2',
-        children: [
-          jsxs('div', {
-            className: 'flex min-w-0 items-baseline gap-2',
-            children: [
-              jsx('div', { className: 'shrink-0 text-sm font-medium', children: t('title') }),
-              jsx('span', {
-                className: `truncate text-xs ${MUTED}`,
-                children: t('statusLine', counts.total, counts.enabled, counts.updates)
-              }),
-              // One global warning instead of the same chip on all 70 rows.
-              versionWarn
-                ? jsx('span', {
-                    className: `shrink-0 text-xs ${DANGER}`,
-                    children: t('requiresVersionWarn', MIN_HERMES)
-                  })
-                : null
-            ]
-          }),
-          jsxs('div', {
-            className: 'flex shrink-0 flex-wrap items-center justify-end gap-2',
-            children: [
-              jsx(Button, {
-                size: 'sm',
-                variant: 'secondary',
-                type: 'button',
-                disabled: bulkUpdating || counts.updates === 0,
-                onClick: runUpdateAll,
-                children: bulkUpdating
-                  ? jsxs('span', {
-                      className: 'inline-flex items-center gap-1.5',
-                      children: [jsx(GlyphSpinner, {}), t('updatingAll')]
-                    })
-                  : t('updateAll')
-              }),
-              jsx(Button, {
-                size: 'sm',
-                variant: installOpen ? 'secondary' : 'outline',
-                type: 'button',
-                onClick: () => {
-                  haptic('tap')
-                  setInstallOpen(open => !open)
-                  setInspect({ status: 'idle' })
-                  setActionError('')
-                },
-                children: t('installFromGit')
-              }),
-              jsx(Tip, {
-                label: t('refresh'),
-                children: jsx(Button, {
-                  size: 'sm',
-                  variant: 'ghost',
-                  type: 'button',
-                  disabled: refreshing,
-                  onClick: refresh,
-                  children: refreshing
-                    ? jsx(GlyphSpinner, {})
-                    : jsx('span', { 'aria-hidden': true, children: '⟳' })
-                })
-              })
-            ]
-          })
-        ]
-      }),
-
-      jsxs('div', {
-        className: 'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 text-xs',
-        children: [
-          chip('all', t('filterAll', counts.total)),
-          chip('enabled', t('filterEnabled', counts.enabled)),
-          chip('disabled', t('filterDisabled', counts.total - counts.enabled)),
-          chip('desktop', t('filterDesktop', counts.desktop)),
-          chip('updates', t('filterUpdates', counts.updates)),
-          jsx('div', { className: 'flex-1' }),
-          jsx('input', {
-            value: query,
-            onChange: event => setQuery(event.target.value),
-            placeholder: t('search'),
-            'aria-label': t('search'),
-            className: cn(INPUT_CLASS, 'w-56')
-          })
-        ]
-      }),
-
-      installOpen
-        ? jsxs('div', {
-            className:
-              'flex min-w-0 flex-col gap-2 rounded-md border border-(--ui-border) bg-(--ui-bg-secondary) p-3',
-            children: [
-              jsx('div', { className: 'text-sm font-medium', children: t('gitTitle') }),
-              jsxs('div', {
-                className: 'flex min-w-0 flex-wrap items-end gap-2',
-                children: [
-                  jsxs('label', {
-                    className: 'flex min-w-0 flex-1 flex-col gap-1 text-xs',
-                    children: [
-                      jsx('span', { className: MUTED, children: t('gitRepo') }),
-                      jsx('input', {
-                        value: installRepo,
-                        onChange: event => setInstallRepo(event.target.value),
-                        placeholder: t('gitRepoPlaceholder'),
-                        'aria-label': t('gitRepo'),
-                        className: cn(INPUT_CLASS, 'w-full')
-                      })
-                    ]
-                  }),
-                  jsxs('label', {
-                    className: 'flex w-64 flex-col gap-1 text-xs',
-                    children: [
-                      jsx('span', { className: MUTED, children: t('gitRef') }),
-                      jsx('input', {
-                        value: installRef,
-                        onChange: event => setInstallRef(event.target.value),
-                        placeholder: t('gitRefPlaceholder'),
-                        'aria-label': t('gitRef'),
-                        spellCheck: false,
-                        className: cn(INPUT_CLASS, 'w-full font-mono')
-                      })
-                    ]
-                  }),
-                  jsx(Button, {
-                    size: 'sm',
-                    variant: 'outline',
-                    type: 'button',
-                    disabled: inspect.status === 'checking',
-                    onClick: runInspect,
-                    children: t('check')
-                  })
-                ]
-              }),
-              inspectPanel()
-            ]
-          })
-        : null,
-
-      scan
-        ? jsxs('div', {
-            className: 'flex flex-col gap-2 rounded-md border border-(--ui-danger) p-3 text-xs',
-            children: [
-              jsx('div', { className: 'text-sm font-medium', children: t('scanTitle') }),
-              scan.verdict
-                ? jsx('div', { className: MUTED, children: t('scanVerdict', scan.verdict) })
-                : null,
-              scan.findings.length
-                ? jsxs('div', {
-                    className: 'flex flex-col gap-0.5',
-                    children: [
-                      jsx('div', { className: MUTED, children: t('scanFindings') }),
-                      ...scan.findings.map((finding, index) =>
-                        jsx('div', { className: 'break-words', children: String(finding) }, index)
-                      )
-                    ]
-                  })
-                : null,
-              jsxs('div', {
-                className: 'flex flex-wrap items-center gap-2',
-                children: [
-                  scan.verdict === 'caution'
-                    ? jsx(Button, {
+    className: 'h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]',
+    children: jsxs('div', {
+      className: 'mx-auto w-full max-w-3xl px-4 pb-6 pt-4',
+      children: [
+        jsxs('div', {
+          className:
+            'sticky top-0 z-10 -mx-4 -mt-4 border-b border-(--ui-stroke-tertiary) ' +
+            'bg-background/90 px-4 py-3 backdrop-blur',
+          style: { marginTop: '-1rem' },
+          children: [
+            jsxs('div', {
+              className: 'flex min-w-0 flex-wrap items-center justify-between gap-3',
+              children: [
+                jsxs('div', {
+                  className: 'min-w-0',
+                  children: [
+                    jsx('div', { className: 'text-sm font-medium', children: t('title') }, 'title'),
+                    jsx(
+                      'div',
+                      {
+                        className: cn('truncate', CAPTION, MUTED),
+                        children: t('statusLine', counts.mine, counts.bundled, allUpdates)
+                      },
+                      'status'
+                    ),
+                    versionWarn
+                      ? jsx('div', { className: cn(CAPTION, DANGER), children: t('requiresVersionWarn', MIN_HERMES) }, 'version')
+                      : null
+                  ]
+                }),
+                jsxs('div', {
+                  className: 'flex shrink-0 flex-wrap items-center justify-end gap-1.5',
+                  children: [
+                    jsx(
+                      Button,
+                      {
                         size: 'xs',
-                        variant: 'destructive',
+                        variant: 'secondary',
                         type: 'button',
-                        disabled: busyName === scan.row.name,
+                        disabled: bulkUpdating || allUpdates === 0,
+                        onClick: runUpdateAll,
+                        children: bulkUpdating
+                          ? jsxs('span', {
+                              className: 'inline-flex items-center gap-1.5',
+                              children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { children: t('updatingAll') }, 'text')]
+                            })
+                          : t('updateAll')
+                      },
+                      'update-all'
+                    ),
+                    jsx(
+                      Button,
+                      {
+                        size: 'xs',
+                        variant: installOpen ? 'secondary' : 'outline',
+                        type: 'button',
                         onClick: () => {
-                          const target = scan
-                          setScan(null)
-                          void runUpdate(target.row, {
-                            force: true,
-                            ...(target.accept ? { accept_capabilities: true } : {})
-                          })
+                          haptic('tap')
+                          setInstallOpen(open => !open)
+                          setInspect({ status: 'idle' })
+                          setActionError('')
                         },
-                        children: t('stillUpdate')
-                      })
-                    : null,
-                  jsx(Button, {
+                        children: t('installFromGit')
+                      },
+                      'install'
+                    ),
+                    jsx(
+                      Tip,
+                      {
+                        label: t('refresh'),
+                        children: jsx(Button, {
+                          size: 'icon-xs',
+                          variant: 'ghost',
+                          type: 'button',
+                          'aria-label': t('refresh'),
+                          disabled: refreshing,
+                          onClick: refresh,
+                          children: refreshing
+                            ? jsx(GlyphSpinner, {})
+                            : jsx('span', { 'aria-hidden': true, children: '⟳' })
+                        })
+                      },
+                      'refresh'
+                    )
+                  ]
+                })
+              ]
+            })
+          ]
+        }),
+
+        jsxs('div', {
+          className: 'mt-3 flex min-w-0 flex-wrap items-center gap-1',
+          children: [
+            chip('all', t('filterAll', counts.mine)),
+            chip('enabled', t('filterEnabled', counts.enabled)),
+            chip('disabled', t('filterDisabled', counts.mine - counts.enabled)),
+            chip('desktop', t('filterDesktop', counts.desktop)),
+            chip('updates', t('filterUpdates', counts.updates)),
+            jsx('div', { className: 'flex-1' }, 'spacer'),
+            jsx(
+              'input',
+              {
+                value: query,
+                onChange: event => setQuery(event.target.value),
+                placeholder: t('search'),
+                'aria-label': t('search'),
+                className: cn(INPUT_CLASS, 'w-52')
+              },
+              'search'
+            )
+          ]
+        }),
+
+        installOpen
+          ? jsxs('div', {
+              className: cn(PANEL_CLASS, 'mt-3'),
+              children: [
+                jsx('div', { className: 'text-sm font-medium', children: t('gitTitle') }, 'title'),
+                jsxs('div', {
+                  className: 'flex min-w-0 flex-wrap items-end gap-2',
+                  children: [
+                    jsxs('label', {
+                      className: 'flex min-w-0 flex-1 flex-col gap-1',
+                      children: [
+                        jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRepo') }, 'label'),
+                        jsx('input', {
+                          value: installRepo,
+                          onChange: event => setInstallRepo(event.target.value),
+                          placeholder: t('gitRepoPlaceholder'),
+                          'aria-label': t('gitRepo'),
+                          className: cn(INPUT_CLASS, 'w-full')
+                        }, 'input')
+                      ]
+                    }, 'repo'),
+                    jsxs('label', {
+                      className: 'flex w-64 flex-col gap-1',
+                      children: [
+                        jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRef') }, 'label'),
+                        jsx('input', {
+                          value: installRef,
+                          onChange: event => setInstallRef(event.target.value),
+                          placeholder: t('gitRefPlaceholder'),
+                          'aria-label': t('gitRef'),
+                          spellCheck: false,
+                          className: cn(INPUT_CLASS, 'w-full font-mono')
+                        }, 'input')
+                      ]
+                    }, 'ref'),
+                    jsx(
+                      Button,
+                      {
+                        size: 'xs',
+                        variant: 'outline',
+                        type: 'button',
+                        disabled: inspect.status === 'checking',
+                        onClick: runInspect,
+                        children: t('check')
+                      },
+                      'check'
+                    )
+                  ]
+                }),
+                inspectPanel()
+              ]
+            }, 'install-panel')
+          : null,
+
+        scan
+          ? jsxs('div', {
+              className:
+                'mt-3 flex flex-col gap-2 rounded-lg border border-destructive/40 ' +
+                'bg-destructive/10 p-3 text-[length:var(--conversation-caption-font-size)]',
+              children: [
+                jsx('div', { className: 'text-sm font-medium', children: t('scanTitle') }, 'title'),
+                scan.verdict
+                  ? jsx('div', { className: MUTED, children: t('scanVerdict', scan.verdict) }, 'verdict')
+                  : null,
+                scan.findings.length
+                  ? jsxs('div', {
+                      className: 'flex flex-col gap-0.5',
+                      children: [
+                        jsx('div', { className: MUTED, children: t('scanFindings') }, 'label'),
+                        ...scan.findings.map((finding, index) =>
+                          jsx('div', { className: 'break-words', children: String(finding) }, `finding-${index}`)
+                        )
+                      ]
+                    })
+                  : null,
+                jsxs('div', {
+                  className: 'flex flex-wrap items-center gap-2',
+                  children: [
+                    scan.verdict === 'caution'
+                      ? jsx(
+                          Button,
+                          {
+                            size: 'xs',
+                            variant: 'destructive',
+                            type: 'button',
+                            disabled: busyName === scan.row.name,
+                            onClick: () => {
+                              const target = scan
+                              setScan(null)
+                              void runUpdate(target.row, {
+                                force: true,
+                                ...(target.accept ? { accept_capabilities: true } : {})
+                              })
+                            },
+                            children: t('stillUpdate')
+                          },
+                          'still'
+                        )
+                      : null,
+                    jsx(
+                      Button,
+                      { size: 'xs', variant: 'ghost', type: 'button', onClick: () => setScan(null), children: t('close') },
+                      'close'
+                    )
+                  ]
+                })
+              ]
+            }, 'scan')
+          : null,
+
+        bulkResult
+          ? jsxs('div', {
+              className: cn(PANEL_CLASS, 'mt-3', CAPTION),
+              children: [
+                ...bulkResult.results.map((result, index) =>
+                  jsxs(
+                    'div',
+                    {
+                      className: 'flex min-w-0 gap-2',
+                      children: [
+                        jsx('span', { className: 'w-40 shrink-0 truncate font-medium', children: result.name }, 'name'),
+                        jsx(
+                          'span',
+                          {
+                            className:
+                              result.status === 'failed' || result.status === 'needs_review' ? DANGER : MUTED,
+                            children: t(
+                              result.status === 'updated'
+                                ? 'statusUpdated'
+                                : result.status === 'current'
+                                  ? 'statusCurrent'
+                                  : result.status === 'needs_review'
+                                    ? 'statusNeedsReview'
+                                    : 'statusFailed'
+                            )
+                          },
+                          'status'
+                        ),
+                        result.detail
+                          ? jsx(
+                              'span',
+                              { className: cn('min-w-0 flex-1 break-words', MUTED), children: result.detail },
+                              'detail'
+                            )
+                          : null
+                      ]
+                    },
+                    `result-${index}`
+                  )
+                ),
+                bulkResult.skipped.length
+                  ? jsxs('div', {
+                      className: 'mt-1 flex flex-col gap-1 border-t border-(--ui-stroke-tertiary) pt-1',
+                      children: [
+                        jsx('div', { className: MUTED, children: t('skippedLabel') }, 'label'),
+                        ...bulkResult.skipped.map((skip, index) =>
+                          jsxs(
+                            'div',
+                            {
+                              className: 'flex min-w-0 gap-2',
+                              children: [
+                                jsx('span', { className: 'w-40 shrink-0 truncate font-medium', children: skip.name }, 'name'),
+                                jsx(
+                                  'span',
+                                  { className: cn('min-w-0 flex-1 break-words', MUTED), children: skip.reason },
+                                  'reason'
+                                )
+                              ]
+                            },
+                            `skip-${index}`
+                          )
+                        )
+                      ]
+                    }, 'skipped')
+                  : null,
+                !bulkResult.results.length && !bulkResult.skipped.length
+                  ? jsx('div', { className: MUTED, children: t('updateAllNoResult') }, 'none')
+                  : null,
+                bulkResult.results.some(result => result.status === 'needs_review')
+                  ? jsx('div', { className: DANGER, children: t('updateAllReviewHint') }, 'review')
+                  : null,
+                jsx('div', {
+                  className: 'flex justify-end',
+                  children: jsx(Button, {
                     size: 'xs',
                     variant: 'ghost',
                     type: 'button',
-                    onClick: () => setScan(null),
+                    onClick: () => setBulkResult(null),
                     children: t('close')
                   })
-                ]
-              })
-            ]
-          })
-        : null,
+                }, 'close')
+              ]
+            }, 'bulk')
+          : null,
 
-      bulkResult
-        ? jsxs('div', {
-            className: 'flex flex-col gap-1 rounded-md border border-(--ui-border) p-3 text-xs',
-            children: [
-              ...bulkResult.results.map((result, index) =>
-                jsxs(
-                  'div',
-                  {
-                    className: 'flex min-w-0 gap-2',
-                    children: [
-                      jsx('span', {
-                        className: 'w-40 shrink-0 truncate font-medium',
-                        children: result.name
-                      }),
-                      jsx('span', {
-                        className:
-                          result.status === 'failed' || result.status === 'needs_review'
-                            ? DANGER
-                            : MUTED,
-                        children: t(
-                          result.status === 'updated'
-                            ? 'statusUpdated'
-                            : result.status === 'current'
-                              ? 'statusCurrent'
-                              : result.status === 'needs_review'
-                                ? 'statusNeedsReview'
-                                : 'statusFailed'
-                        )
-                      }),
-                      result.detail
-                        ? jsx('span', {
-                            className: `min-w-0 flex-1 break-words ${MUTED}`,
-                            children: result.detail
-                          })
-                        : null
-                    ]
-                  },
-                  `result-${index}`
-                )
-              ),
-              bulkResult.skipped.length
-                ? jsxs('div', {
-                    className: 'mt-1 flex flex-col gap-1 border-t border-(--ui-border) pt-1',
-                    children: [
-                      jsx('div', { className: MUTED, children: t('skippedLabel') }),
-                      ...bulkResult.skipped.map((skip, index) =>
-                        jsxs(
-                          'div',
-                          {
-                            className: 'flex min-w-0 gap-2',
-                            children: [
-                              jsx('span', {
-                                className: 'w-40 shrink-0 truncate font-medium',
-                                children: skip.name
-                              }),
-                              jsx('span', {
-                                className: `min-w-0 flex-1 break-words ${MUTED}`,
-                                children: skip.reason
-                              })
-                            ]
-                          },
-                          `skip-${index}`
-                        )
-                      )
-                    ]
-                  })
-                : null,
-              !bulkResult.results.length && !bulkResult.skipped.length
-                ? jsx('div', { className: MUTED, children: t('updateAllNoResult') })
-                : null,
-              bulkResult.results.some(result => result.status === 'needs_review')
-                ? jsx('div', { className: DANGER, children: t('updateAllReviewHint') })
-                : null,
-              jsx('div', {
-                className: 'flex justify-end',
-                children: jsx(Button, {
-                  size: 'xs',
-                  variant: 'ghost',
-                  type: 'button',
-                  onClick: () => setBulkResult(null),
-                  children: t('close')
-                })
-              })
-            ]
-          })
-        : null,
+        loadError && allRows.length
+          ? jsx('div', { className: cn(ERROR_BAR, 'mt-3'), children: t('loadFailed', loadError) }, 'load-error')
+          : null,
+        actionError
+          ? jsx('div', { className: cn(ERROR_BAR, 'mt-3'), children: actionError }, 'action-error')
+          : null,
 
-      loadError
-        ? jsx('div', { className: `text-xs ${DANGER}`, children: t('loadFailed', loadError) })
-        : null,
-      actionError ? jsx('div', { className: `text-xs ${DANGER}`, children: actionError }) : null,
+        body(),
 
-      body(),
-
-      jsx(ConfirmDialog, {
-        open: Boolean(pendingRemove),
-        onClose: () => setPendingRemove(null),
-        onConfirm: doRemove,
-        title: pendingRemove
-          ? pendingRemove.desktop_only
-            ? t('removeDesktopTitle', pendingRemove.name)
-            : t('removeTitle', pendingRemove.name)
-          : '',
-        description: pendingRemove
-          ? pendingRemove.desktop_only
-            ? t('removeDesktopBody', pendingRemove.name)
-            : t('removeBody', pendingRemove.name)
-          : '',
-        confirmLabel:
-          pendingRemove && pendingRemove.desktop_only ? t('uninstallDesktop') : t('uninstall'),
-        destructive: true
-      }),
-      jsx(ConfirmDialog, {
-        open: Boolean(consent),
-        onClose: () => setConsent(null),
-        onConfirm: async () => {
-          const target = consent
-          if (!target) return
-          setConsent(null)
-          await runUpdate(target.row, { accept_capabilities: true })
-        },
-        title: consent ? t('consentTitle', consent.row.name) : '',
-        description: consent
-          ? `${t('consentBody')}\n\n${consent.lines.map(line => `• ${line}`).join('\n')}`
-          : '',
-        confirmLabel: t('consentGo')
-      })
-    ]
+        jsx(ConfirmDialog, {
+          open: Boolean(pendingRemove),
+          onClose: () => setPendingRemove(null),
+          onConfirm: doRemove,
+          title: pendingRemove
+            ? pendingRemove.desktop_only
+              ? t('removeDesktopTitle', pendingRemove.name)
+              : t('removeTitle', pendingRemove.name)
+            : '',
+          description: pendingRemove
+            ? pendingRemove.desktop_only
+              ? t('removeDesktopBody', pendingRemove.name)
+              : t('removeBody', pendingRemove.name)
+            : '',
+          confirmLabel:
+            pendingRemove && pendingRemove.desktop_only ? t('uninstallDesktop') : t('uninstall'),
+          destructive: true
+        }),
+        jsx(ConfirmDialog, {
+          open: Boolean(consent),
+          onClose: () => setConsent(null),
+          onConfirm: async () => {
+            const target = consent
+            if (!target) return
+            setConsent(null)
+            await runUpdate(target.row, { accept_capabilities: true })
+          },
+          title: consent ? t('consentTitle', consent.row.name) : '',
+          description: consent
+            ? `${t('consentBody')}\n\n${consent.lines.map(line => `• ${line}`).join('\n')}`
+            : '',
+          confirmLabel: t('consentGo')
+        })
+      ]
+    })
   })
 }
 
