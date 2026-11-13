@@ -34,6 +34,8 @@ const PAGE_PATH = '/cn-plugins-market'
 /** The backend surface this page drives (install_desktop, remove_desktop, inspect). */
 const MIN_HERMES = '0.22.5'
 const PREFS_KEY = 'prefs'
+/** A git remote under this account means "the user develops this one". */
+const DEV_REMOTE_RE = /github[.]com[:/]krintcal[/]/i
 const REF_RE = /^[0-9a-f]{40}$/i
 const FILTERS = ['all', 'enabled', 'disabled', 'desktop', 'updates']
 
@@ -67,9 +69,10 @@ const MESSAGES = {
   en: {
     nav: 'Plugin manager',
     title: 'Plugin manager',
-    statusLine: (mine, bundled, updates) =>
-      `${mine} mine · ${bundled} built-in · ${updates} update${updates === 1 ? '' : 's'}`,
-    mineGroup: 'My plugins',
+    statusLine: (dev, installed, bundled, updates) =>
+      `${dev} developing · ${installed} installed · ${bundled} built-in · ${updates} update${updates === 1 ? '' : 's'}`,
+    devGroup: 'In development',
+    installedGroup: 'Installed',
     bundledGroup: 'Built-in',
     refresh: 'Refresh',
     updateAll: 'Update all',
@@ -196,9 +199,10 @@ const MESSAGES = {
   zh: {
     nav: '插件管理',
     title: '插件管理',
-    statusLine: (mine, bundled, updates) =>
-      `${mine} 个自己的 · ${bundled} 个内置 · ${updates} 个有更新`,
-    mineGroup: '我的插件',
+    statusLine: (dev, installed, bundled, updates) =>
+      `${dev} 个开发中 · ${installed} 个另外装的 · ${bundled} 个内置 · ${updates} 个有更新`,
+    devGroup: '开发中（我自己的）',
+    installedGroup: '另外安装的',
     bundledGroup: '内置',
     refresh: '刷新',
     updateAll: '全部更新',
@@ -324,9 +328,10 @@ const MESSAGES = {
   'zh-hant': {
     nav: '外掛管理',
     title: '外掛管理',
-    statusLine: (mine, bundled, updates) =>
-      `${mine} 個自己的 · ${bundled} 個內建 · ${updates} 個有更新`,
-    mineGroup: '我的外掛',
+    statusLine: (dev, installed, bundled, updates) =>
+      `${dev} 個開發中 · ${installed} 個另外裝的 · ${bundled} 個內建 · ${updates} 個有更新`,
+    devGroup: '開發中（我自己的）',
+    installedGroup: '另外安裝的',
     bundledGroup: '內建',
     refresh: '重新整理',
     updateAll: '全部更新',
@@ -461,8 +466,8 @@ let pluginCtx = null
  *  every row, which reads as "the page is broken". */
 const PREFS_VERSION = 2
 let prefs = { filter: 'all', v: PREFS_VERSION }
-/** `mine` starts open, `bundled` starts folded; both persist under `sections`. */
-let sections = { mine: true, bundled: false }
+/** Dev and installed start open, built-ins start folded; all persist. */
+let sections = { dev: true, installed: true, bundled: false }
 /** Last successful `plugins.manage list` — the gateway needs ~3 s for 73 plugins,
  *  so the page paints this immediately and refreshes behind it. */
 const ROWS_CACHE_KEY = 'rows.v1'
@@ -503,7 +508,8 @@ function hydrate() {
   const storedSections = readStored('sections')
   if (storedSections && typeof storedSections === 'object') {
     sections = {
-      mine: storedSections.mine !== false,
+      dev: storedSections.dev !== false,
+      installed: storedSections.installed !== false,
       bundled: storedSections.bundled === true
     }
   }
@@ -738,6 +744,8 @@ function ManagerPage() {
   const [loadError, setLoadError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [desktopDirs, setDesktopDirs] = useState(() => new Set())
+  /** Plugin names whose git remote belongs to the user's own GitHub account. */
+  const [devSet, setDevSet] = useState(() => new Set(rowsCache.dev || []))
   const [appVersion, setAppVersion] = useState('')
   const [filter, setFilter] = useState(prefs.filter)
   const [query, setQuery] = useState('')
@@ -781,6 +789,27 @@ function ManagerPage() {
     }
   }, [])
 
+  /**
+   * "Mine to develop" = a git checkout whose remote is the user's own GitHub
+   * account. Everything else the user installed stays in "installed" — the
+   * backend only knows bundled vs not, so the split has to come from `.git`.
+   */
+  const detectDev = useCallback(async plugins => {
+    const names = []
+    await Promise.all(
+      plugins
+        .filter(row => row.source !== 'bundled' && row.install_dir)
+        .map(async row => {
+          const cfg = await readMaybeText(joinPath(row.install_dir, '.git', 'config'))
+          if (cfg.ok && DEV_REMOTE_RE.test(cfg.text)) names.push(row.name)
+        })
+    )
+    names.sort()
+    setDevSet(new Set(names))
+    rowsCache = { ...rowsCache, dev: names }
+    writeStored(ROWS_CACHE_KEY, rowsCache)
+  }, [])
+
   const refresh = useCallback(async () => {
     setRefreshing(true)
     try {
@@ -790,8 +819,9 @@ function ManagerPage() {
       setLoadError('')
       setStatus('ready')
       // Stale-while-revalidate: next open paints these instead of the spinner.
-      rowsCache = { at: Date.now(), plugins: res.plugins }
+      rowsCache = { at: Date.now(), plugins: res.plugins, dev: rowsCache.dev || [] }
       writeStored(ROWS_CACHE_KEY, rowsCache)
+      void detectDev(res.plugins)
     } catch (e) {
       // A failed refresh keeps the last good rows on screen — wiping them turns a
       // network hiccup into "I have no plugins".
@@ -801,7 +831,7 @@ function ManagerPage() {
     }
     setDesktopDirs(await readDesktopDirs())
     setRefreshing(false)
-  }, [readDesktopDirs])
+  }, [detectDev, readDesktopDirs])
 
   useEffect(() => {
     void refresh()
@@ -969,9 +999,14 @@ function ManagerPage() {
     void loadDev(row)
   }, [allRows, loadDev, openId])
 
-  /** Two sections: everything the user brought in, then the built-ins. */
+  /** Three sections: my own checkouts, everything else I installed, then built-ins. */
   const mineRows = useMemo(() => allRows.filter(row => row.source !== 'bundled'), [allRows])
   const bundledRows = useMemo(() => allRows.filter(row => row.source === 'bundled'), [allRows])
+  const devRows = useMemo(() => mineRows.filter(row => devSet.has(row.name)), [mineRows, devSet])
+  const installedRows = useMemo(
+    () => mineRows.filter(row => !devSet.has(row.name)),
+    [mineRows, devSet]
+  )
 
   const counts = useMemo(() => {
     let enabled = 0
@@ -984,12 +1019,14 @@ function ManagerPage() {
     }
     return {
       mine: mineRows.length,
+      dev: devRows.length,
+      installed: installedRows.length,
       bundled: bundledRows.length,
       enabled,
       updates,
       desktop
     }
-  }, [mineRows, bundledRows])
+  }, [mineRows, bundledRows, devRows, installedRows])
 
   const allUpdates = useMemo(
     () => allRows.filter(row => row.update_available).length,
@@ -1008,6 +1045,9 @@ function ManagerPage() {
       return true
     })
   }, [mineRows, filter, query])
+
+  const filteredDev = filteredMine.filter(row => devSet.has(row.name))
+  const filteredInstalled = filteredMine.filter(row => !devSet.has(row.name))
 
   const filtering = filter !== 'all' || Boolean(query.trim())
 
@@ -1807,6 +1847,12 @@ function ManagerPage() {
       'empty'
     )
 
+  const sectionBody = rows => {
+    if (rows.length) return rowList(rows)
+    if (filtering) return null
+    return emptyBlock(t('empty'), false)
+  }
+
   const mineBody = () => {
     if (filteredMine.length) return rowList(filteredMine)
     if (filtering) return emptyBlock(t('emptyFiltered'), true)
@@ -1836,13 +1882,27 @@ function ManagerPage() {
     return jsxs('div', {
       className: 'flex flex-col',
       children: [
-        jsxs('section', {
-          className: 'mt-2',
-          children: [
-            groupHeader('mine', t('mineGroup'), mineRows.length),
-            expanded.mine ? mineBody() : null
-          ]
-        }, 'mine'),
+        devRows.length
+          ? jsxs('section', {
+              className: 'mt-2',
+              children: [
+                groupHeader('dev', t('devGroup'), devRows.length),
+                expanded.dev ? sectionBody(filteredDev) : null
+              ]
+            }, 'dev')
+          : null,
+        installedRows.length
+          ? jsxs('section', {
+              className: devRows.length ? 'mt-4' : 'mt-2',
+              children: [
+                groupHeader('installed', t('installedGroup'), installedRows.length),
+                expanded.installed ? sectionBody(filteredInstalled) : null
+              ]
+            }, 'installed')
+          : null,
+        !devRows.length && !installedRows.length && filtering
+          ? jsxs('section', { className: 'mt-2', children: mineBody() }, 'mine-empty')
+          : null,
         bundledRows.length
           ? jsxs('section', {
               className: 'mt-4',
@@ -1879,8 +1939,8 @@ function ManagerPage() {
                       {
                         className: cn('truncate', CAPTION, MUTED),
                         children: refreshing
-                          ? `${t('statusLine', counts.mine, counts.bundled, allUpdates)} · ${t('loading')}`
-                          : t('statusLine', counts.mine, counts.bundled, allUpdates)
+                          ? `${t('statusLine', counts.dev, counts.installed, counts.bundled, allUpdates)} · ${t('loading')}`
+                          : t('statusLine', counts.dev, counts.installed, counts.bundled, allUpdates)
                       },
                       'status'
                     ),

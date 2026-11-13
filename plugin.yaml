@@ -1,5 +1,5 @@
 name: cn-plugins-market
-version: "2.2.1"
+version: "2.3.0"
 description: >-
   Manage the plugins installed on this machine inside the Desktop app. Adds two
   sections (yours first, built-ins folded) with a status line and filters,
