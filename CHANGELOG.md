@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.0 — 2026-11-13
+
+- **修「开发中」判定**：原来只有 `.git/config` 的 remote 指向 `github.com/krintcal/…` 才算开发中，本地手写、根本没 `git init` 的 `hermes-heartbeat` / `hermes-restart` 被错分到「另外安装的」。现在规则是：非内置插件目录下**没有** `.git`（读不到 `.git/config`）→ 开发中；有 `.git` 时 remote 仍须指向 `github.com/krintcal/…`。判定结果继续随列表一起缓存（`rowsCache.dev`）。
+- **页面改成左右分栏（master-detail）。** 外层用满宽度（不再 `max-w-3xl`）：左边 `19rem` 固定栏 = 搜索框 + 筛选 + 三组列表（开发中 / 另外安装的 / 内置，内置默认折叠）；右边自适应详情 = 名称/版本/来源徽标 + 开关 + 「状态 / 来源与更新 / 开发态 / 路径 / 操作」分节，路径支持打开目录与复制，底部是更新、卸载、卸载桌面半边、复制命令。
+- **默认选中第一项**：`selectedName` 初始为空，列表就绪后自动落到「开发中」第一行；搜索/筛选/刷新导致选中项不在可见列表里时，回落到第一行。内置组折叠不影响已选中的内置项。
+- **开发态只读保留**：仍直接读 `.git/HEAD` 和 `.git/config`，对比源与运行副本；`重读` 可单独刷新当前插件。
+- 移除页面里已失效的同步到运行副本代码（桌面插件拿不到命令执行能力），不再包含任何命令执行调用。
+- **i18n**：新增 `detailStatus`、`detailSourceSection`、`detailPathSection`、`detailActions`、`selectHint`、`halfAgent`、`halfDesktop`、`halfYes`、`halfNo`（三语言各 124 → 133 键）。
+- 版本 → `2.4.0`；list / toggle / update / update_all / remove / remove_desktop / inspect / install / install_desktop、consent 与 scan 流程、缓存逻辑均未改。
+
 ## 2.3.0 — 2026-11-13
 
 - **分成三组**：`开发中（我自己的）` / `另外安装的` / `内置`（默认折叠），状态行改成 `1 个开发中 · 9 个另外装的 · 63 个内置 · 2 个有更新`。

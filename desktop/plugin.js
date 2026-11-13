@@ -42,15 +42,9 @@ const FILTERS = ['all', 'enabled', 'disabled', 'desktop', 'updates']
 const INPUT_CLASS =
   'h-7 rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-input) px-2 outline-none ' +
   'text-[length:var(--conversation-caption-font-size)]'
-const ROW_CLASS =
-  '-mx-2 flex flex-col rounded-md border-b border-(--ui-stroke-tertiary) px-2 py-2.5 ' +
-  'transition-colors hover:bg-accent/40'
 const BADGE_CLASS =
   'shrink-0 rounded border border-(--ui-stroke-tertiary) px-1.5 py-px ' +
   'text-[0.65rem] text-(--ui-text-tertiary)'
-const GROUP_CLASS =
-  'flex w-full items-center gap-2 py-2 uppercase tracking-wide ' +
-  'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-quaternary)'
 const PANEL_CLASS =
   'flex flex-col gap-2 rounded-lg border border-(--ui-stroke-tertiary) p-3'
 const ERROR_BAR =
@@ -130,6 +124,15 @@ const MESSAGES = {
     statusDisabled: 'disabled',
     desktopHas: 'yes',
     desktopNone: 'no',
+    detailStatus: 'Status',
+    detailSourceSection: 'Source & updates',
+    detailPathSection: 'Path',
+    detailActions: 'Actions',
+    selectHint: 'Pick a plugin on the left to see its details.',
+    halfAgent: 'agent half',
+    halfDesktop: 'desktop half',
+    halfYes: 'yes',
+    halfNo: 'no',
     requiresVersionWarn: version => `needs ≥${version} (this app is older)`,
     update: 'Update',
     updating: 'Updating…',
@@ -175,6 +178,8 @@ const MESSAGES = {
     removeDesktopDone: name => `${name} desktop half removed.`,
     removeFailed: message => `Uninstall failed: ${message}`,
     copyCommand: 'Copy command',
+    devMark: 'Mark as mine',
+    devUnmark: 'Not mine',
     devState: 'Dev',
     devGitBranch: 'git',
     devGitDirty: n => `${n} uncommitted`,
@@ -260,6 +265,15 @@ const MESSAGES = {
     statusDisabled: '已停用',
     desktopHas: '有',
     desktopNone: '无',
+    detailStatus: '状态',
+    detailSourceSection: '来源与更新',
+    detailPathSection: '路径',
+    detailActions: '操作',
+    selectHint: '在左边选一个插件查看详情',
+    halfAgent: 'agent 半边',
+    halfDesktop: 'desktop 半边',
+    halfYes: '有',
+    halfNo: '无',
     requiresVersionWarn: version => `需 ≥${version}（本机偏低）`,
     update: '更新',
     updating: '更新中…',
@@ -304,6 +318,8 @@ const MESSAGES = {
     removeDesktopDone: name => `${name} 的桌面半边已卸载`,
     removeFailed: message => `卸载失败：${message}`,
     copyCommand: '复制命令',
+    devMark: '标记为我开发的',
+    devUnmark: '不算我开发的',
     devState: '开发态',
     devGitBranch: 'git',
     devGitDirty: n => `${n} 处未提交`,
@@ -389,6 +405,15 @@ const MESSAGES = {
     statusDisabled: '已停用',
     desktopHas: '有',
     desktopNone: '無',
+    detailStatus: '狀態',
+    detailSourceSection: '來源與更新',
+    detailPathSection: '路徑',
+    detailActions: '操作',
+    selectHint: '在左邊選一個外掛查看詳情',
+    halfAgent: 'agent 半邊',
+    halfDesktop: 'desktop 半邊',
+    halfYes: '有',
+    halfNo: '無',
     requiresVersionWarn: version => `需 ≥${version}（本機偏低）`,
     update: '更新',
     updating: '更新中…',
@@ -433,6 +458,8 @@ const MESSAGES = {
     removeDesktopDone: name => `${name} 的桌面半邊已卸載`,
     removeFailed: message => `卸載失敗：${message}`,
     copyCommand: '複製指令',
+    devMark: '標記為我開發的',
+    devUnmark: '不算我開發的',
     devState: '開發態',
     devGitBranch: 'git',
     devGitDirty: n => `${n} 處未提交`,
@@ -464,13 +491,17 @@ let pluginCtx = null
 /** Bumped when a stored preference stops meaning what it used to: an old filter
  *  value from 1.x (e.g. 'disabled') would otherwise survive a redesign and hide
  *  every row, which reads as "the page is broken". */
-const PREFS_VERSION = 2
+const PREFS_VERSION = 3
 let prefs = { filter: 'all', v: PREFS_VERSION }
 /** Dev and installed start open, built-ins start folded; all persist. */
-let sections = { dev: true, installed: true, bundled: false }
+const SECTIONS_VERSION = 2
+let sections = { v: SECTIONS_VERSION, dev: true, installed: true, bundled: false }
 /** Last successful `plugins.manage list` — the gateway needs ~3 s for 73 plugins,
  *  so the page paints this immediately and refreshes behind it. */
-const ROWS_CACHE_KEY = 'rows.v1'
+const ROWS_CACHE_KEY = 'rows.v2'
+/** Manual "this one is mine" corrections, by name. */
+const DEV_OVERRIDES_KEY = 'dev.overrides'
+let devOverrides = { on: [], off: [] }
 let rowsCache = { at: 0, plugins: [] }
 
 function readStored(key) {
@@ -506,8 +537,11 @@ function hydrate() {
   }
   if (!FILTERS.includes(prefs.filter)) prefs.filter = 'all'
   const storedSections = readStored('sections')
-  if (storedSections && typeof storedSections === 'object') {
+  // Old records had no version and could carry `bundled: true` from a previous
+  // design, which showed 63 built-ins the user never asked to expand.
+  if (storedSections && storedSections.v === SECTIONS_VERSION) {
     sections = {
+      v: SECTIONS_VERSION,
       dev: storedSections.dev !== false,
       installed: storedSections.installed !== false,
       bundled: storedSections.bundled === true
@@ -515,9 +549,17 @@ function hydrate() {
   }
   // Persist the sanitised values so a stale key never comes back on next reload.
   writeStored(PREFS_KEY, prefs)
+  const overrides = readStored(DEV_OVERRIDES_KEY)
+  if (overrides && Array.isArray(overrides.on) && Array.isArray(overrides.off)) {
+    devOverrides = { on: overrides.on, off: overrides.off }
+  }
   const cached = readStored(ROWS_CACHE_KEY)
   if (cached && Array.isArray(cached.plugins)) {
-    rowsCache = { at: Number(cached.at) || 0, plugins: cached.plugins }
+    rowsCache = {
+      at: Number(cached.at) || 0,
+      plugins: cached.plugins,
+      dev: Array.isArray(cached.dev) ? cached.dev : []
+    }
   }
 }
 
@@ -581,8 +623,13 @@ function sourceKeyOf(row) {
   return 'sourceLocal'
 }
 
+/**
+ * React key for a row. `key` alone is not unique: the same package can be listed
+ * from two sources (git install + catalog pin), and a duplicate key makes React
+ * silently drop one row while the group count still counts it.
+ */
 function rowKeyOf(row) {
-  return row.key || `name:${row.name}`
+  return `${row.key || `name:${row.name}`}|${row.source || ''}`
 }
 
 /** Label/value pair for the detail panel's two-column grid. */
@@ -750,7 +797,7 @@ function ManagerPage() {
   const [filter, setFilter] = useState(prefs.filter)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(() => ({ ...sections }))
-  const [openId, setOpenId] = useState('')
+  const [selectedName, setSelectedName] = useState('')
   const [busyName, setBusyName] = useState('')
   const [rowError, setRowError] = useState(null)
   const [actionError, setActionError] = useState('')
@@ -766,7 +813,7 @@ function ManagerPage() {
   const [installingHalf, setInstallingHalf] = useState('')
   const [devCache, setDevCache] = useState({})
   const devCacheRef = useRef({})
-  const [syncingName, setSyncingName] = useState('')
+  const pickedRef = useRef(false)
 
   const setDev = useCallback((name, entry) => {
     const next = { ...devCacheRef.current, [name]: entry }
@@ -790,20 +837,36 @@ function ManagerPage() {
   }, [])
 
   /**
-   * "Mine to develop" = a git checkout whose remote is the user's own GitHub
-   * account. Everything else the user installed stays in "installed" — the
-   * backend only knows bundled vs not, so the split has to come from `.git`.
+   * "Mine to develop" = a local hand-written plugin (no `.git`) or a checkout
+   * whose remote is the user's own GitHub account. A `.git` copied from someone
+   * else's repository is just an install. The backend only knows bundled vs
+   * not, so this split has to come from the plugin directory itself.
    */
   const detectDev = useCallback(async plugins => {
     const names = []
-    await Promise.all(
-      plugins
-        .filter(row => row.source !== 'bundled' && row.install_dir)
-        .map(async row => {
-          const cfg = await readMaybeText(joinPath(row.install_dir, '.git', 'config'))
-          if (cfg.ok && DEV_REMOTE_RE.test(cfg.text)) names.push(row.name)
-        })
-    )
+    for (const row of plugins) {
+      if (row.source === 'bundled') continue
+      if (devOverrides.off.includes(row.name)) continue
+      if (devOverrides.on.includes(row.name)) {
+        names.push(row.name)
+        continue
+      }
+      // `.git` cannot be read through the bridge (Electron blocks it as a
+      // sensitive path), so the split comes from how it was installed: anything
+      // git-sourced, hand-placed in the app dir, or installed locally *with* a
+      // desktop page is his own work. A plain agent-only package from someone
+      // else's repo (superpowers) stays in "installed".
+      // `git pinned@<sha>` / `catalog:…` mean the package came from a catalog, not
+      // from a checkout he owns; only a bare `git` (or a hand-placed desktop half)
+      // is his own work.
+      // A plain `git` checkout with no pinned sha is his own clone; a pinned one
+      // came from the catalog's index. Hand-placed desktop halves count too.
+      if (row.source === 'desktop' || (row.source === 'git' && !row.pinned_sha)) {
+        names.push(row.name)
+        continue
+      }
+      if (row.source === 'user' && row.has_desktop_half) names.push(row.name)
+    }
     names.sort()
     setDevSet(new Set(names))
     rowsCache = { ...rowsCache, dev: names }
@@ -821,7 +884,7 @@ function ManagerPage() {
       // Stale-while-revalidate: next open paints these instead of the spinner.
       rowsCache = { at: Date.now(), plugins: res.plugins, dev: rowsCache.dev || [] }
       writeStored(ROWS_CACHE_KEY, rowsCache)
-      void detectDev(res.plugins)
+      // detection runs from allRows (see effect below) so desktop-only rows count too
     } catch (e) {
       // A failed refresh keeps the last good rows on screen — wiping them turns a
       // network hiccup into "I have no plugins".
@@ -874,9 +937,9 @@ function ManagerPage() {
           readMaybeText(packagePath)
         ])
 
-        // `shell.exec` is not callable from a desktop plugin (the gateway answers
-        // invalid_params), so dirty/ahead counts are out of reach here: branch and
-        // commit come from `.git`, the rest of the dev picture from file reads.
+        // Dirty/ahead counts would need a command runner, which a desktop plugin
+        // does not have: branch and commit come from `.git`, the rest of the dev
+        // picture from plain file reads.
         const git = !dirOk ? { badPath: true } : head || { notGit: true }
 
         const copy = runningPath ? compareCopy(source, running) : { kind: 'error', error: t('devBadPath') }
@@ -886,54 +949,6 @@ function ManagerPage() {
       }
     },
     [setDev, t]
-  )
-
-  const syncRow = useCallback(
-    async row => {
-      const name = row.name
-      if (syncingName) return
-      const desktop = bridge()
-      let root = ''
-      if (desktop && typeof desktop.desktopPluginsRoot === 'function') {
-        try {
-          root = await desktop.desktopPluginsRoot()
-        } catch {
-          root = ''
-        }
-      }
-      const appRoot = appRootOf(root)
-      if (!isSafeShellPath(row.install_dir) || !isSafeShellPath(appRoot) || !isSafeName(name)) {
-        setDev(name, { ...(devCacheRef.current[name] || {}), syncError: t('devBadPath') })
-        return
-      }
-      const source = joinPath(row.install_dir, 'desktop', 'plugin.js')
-      const target = joinPath(appRoot, 'desktop-plugins', name, 'plugin.js')
-      setSyncingName(name)
-      try {
-        // `copy` fails when the target folder does not exist yet; creating it
-        // first is also how a plugin that never had a running copy gets one.
-        await host
-          .request('shell.exec', { command: `cmd /c mkdir "${joinPath(appRoot, 'desktop-plugins', name)}"` }, 35000)
-          .catch(() => null)
-        const copyCommand = `cmd /c copy /y "${source}" "${target}"`
-        const touchCommand = `cmd /c echo.>>"${target}"`
-        const copied = await host.request('shell.exec', { command: copyCommand }, 35000)
-        if (!copied || (typeof copied.code === 'number' && copied.code !== 0)) {
-          throw new Error((copied && (copied.stderr || copied.error)) || 'copy failed')
-        }
-        const touched = await host.request('shell.exec', { command: touchCommand }, 35000)
-        if (!touched || (typeof touched.code === 'number' && touched.code !== 0)) {
-          throw new Error((touched && (touched.stderr || touched.error)) || 'append failed')
-        }
-        notify('success', t('devSyncedToast'))
-        await loadDev(row, true)
-      } catch (error) {
-        setDev(name, { ...(devCacheRef.current[name] || {}), syncError: errorMessage(error) })
-      } finally {
-        setSyncingName('')
-      }
-    },
-    [loadDev, notify, setDev, syncingName, t]
   )
 
   useEffect(() => {
@@ -990,14 +1005,26 @@ function ManagerPage() {
     return merged.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
   }, [rows, desktopDirs])
 
-  /** Only the expanded row pays for git; everything else stays unread. */
+  /** One-click correction for the heuristic above. */
+  const toggleDev = useCallback(row => {
+    const name = row.name
+    const isDev = devSet.has(name)
+    devOverrides = isDev
+      ? { on: devOverrides.on.filter(x => x !== name), off: [...new Set([...devOverrides.off, name])] }
+      : { on: [...new Set([...devOverrides.on, name])], off: devOverrides.off.filter(x => x !== name) }
+    writeStored(DEV_OVERRIDES_KEY, devOverrides)
+    haptic('tap')
+    void detectDev(allRows)
+  }, [allRows, devSet, detectDev])
+
+
+  /** Recompute dev membership whenever the merged row list changes. */
   useEffect(() => {
-    if (!openId) return
-    const row = allRows.find(item => rowKeyOf(item) === openId)
-    if (!row || !row.has_desktop_half || !row.install_dir) return
-    if (devCacheRef.current[row.name]) return
-    void loadDev(row)
-  }, [allRows, loadDev, openId])
+    if (!allRows.length) return
+    void detectDev(allRows)
+    // detectDev is stable ([] deps); allRows identity changes on refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRows])
 
   /** Three sections: my own checkouts, everything else I installed, then built-ins. */
   const mineRows = useMemo(() => allRows.filter(row => row.source !== 'bundled'), [allRows])
@@ -1050,6 +1077,40 @@ function ManagerPage() {
   const filteredInstalled = filteredMine.filter(row => !devSet.has(row.name))
 
   const filtering = filter !== 'all' || Boolean(query.trim())
+
+  const currentRow = useMemo(
+    () => allRows.find(row => row.name === selectedName) || null,
+    [allRows, selectedName]
+  )
+
+  /** The left list decides what can be selected; built-ins count even while folded. */
+  const selectableRows = useMemo(
+    () => [...filteredDev, ...filteredInstalled, ...bundledRows],
+    [filteredDev, filteredInstalled, bundledRows]
+  )
+
+  useEffect(() => {
+    const fallback = filteredDev[0] || filteredInstalled[0] || bundledRows[0] || null
+    if (!fallback) {
+      if (selectedName) setSelectedName('')
+      return
+    }
+    const exists = Boolean(selectedName) && selectableRows.some(row => row.name === selectedName)
+    // Before the user picks anything, keep the default on the first row (the
+    // first dev plugin) even when the dev scan finishes after the list paints.
+    if (!pickedRef.current) {
+      if (selectedName !== fallback.name) setSelectedName(fallback.name)
+      return
+    }
+    if (!exists) setSelectedName(fallback.name)
+  }, [bundledRows, filteredDev, filteredInstalled, selectedName, selectableRows])
+
+  /** Only the selected row pays for git; everything else stays unread. */
+  useEffect(() => {
+    if (!currentRow || !currentRow.has_desktop_half || !currentRow.install_dir) return
+    if (devCacheRef.current[currentRow.name]) return
+    void loadDev(currentRow)
+  }, [currentRow, loadDev])
 
   const versionWarn = versionParts(appVersion) && !satisfies(`>=${MIN_HERMES}`, appVersion)
 
@@ -1217,19 +1278,20 @@ function ManagerPage() {
   )
 
   const doRemove = useCallback(async () => {
-    const target = pendingRemove
+    const target = pendingRemove && pendingRemove.row
     if (!target) return
+    const desktop = pendingRemove.mode === 'remove_desktop'
     setBusyName(target.name)
     setActionError('')
     try {
-      const params = target.desktop_only
+      const params = desktop
         ? { action: 'remove_desktop', name: target.name }
         : { action: 'remove', name: target.name }
       const res = await host.request('plugins.manage', params, 300000)
       if (!res || !res.ok) throw new Error((res && res.error) || 'remove rejected')
       notify(
         'success',
-        target.desktop_only ? t('removeDesktopDone', target.name) : t('uninstalled', target.name)
+        desktop ? t('removeDesktopDone', target.name) : t('uninstalled', target.name)
       )
       setPendingRemove(null)
       await refresh()
@@ -1265,8 +1327,8 @@ function ManagerPage() {
     haptic('tap')
     setExpanded(prev => {
       const next = { ...prev, [key]: !prev[key] }
-      sections = next
-      writeStored('sections', next)
+      sections = { ...next, v: SECTIONS_VERSION }
+      writeStored('sections', sections)
       return next
     })
   }
@@ -1359,14 +1421,13 @@ function ManagerPage() {
     })
   }
 
-  const devPanel = row => {
+  const devSection = row => {
     const state = devCache[row.name]
     const loading = !state || state.status === 'loading'
     const ready = Boolean(state && state.status === 'ready')
     const failed = Boolean(state && state.status === 'error')
     const git = (state && state.git) || {}
     const copy = (state && state.copy) || {}
-    const canSync = isSafeShellPath(row.install_dir) && isSafeName(row.name)
 
     let gitNode
     if (loading) {
@@ -1391,7 +1452,7 @@ function ManagerPage() {
       }
       if (git.branch) {
         sep()
-        parts.push(jsx('span', { children: `${t('devGitBranch')}: ${git.branch}` }, `branch-${parts.length}`))
+        parts.push(jsx('span', { children: git.branch }, `branch-${parts.length}`))
       }
       if (git.dirty) {
         sep()
@@ -1408,9 +1469,17 @@ function ManagerPage() {
       gitNode = jsxs('span', { className: 'flex min-w-0 flex-wrap items-center', children: parts }, 'git')
     }
 
-    let copyText = ''
-    let copyDanger = false
-    if (ready) {
+    let copyNode
+    if (loading) {
+      copyNode = jsxs('span', {
+        className: `inline-flex items-center gap-1 ${MUTED}`,
+        children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { children: t('devLoading') }, 'text')]
+      })
+    } else if (failed) {
+      copyNode = jsx('span', { className: MUTED, children: '—' }, 'copy-error')
+    } else {
+      let copyText = ''
+      let copyDanger = false
       if (copy.kind === 'synced') {
         copyText = [t('devCopySynced'), formatBytes(copy.bytes)].filter(Boolean).join(' · ')
       } else if (copy.kind === 'pending') {
@@ -1430,20 +1499,19 @@ function ManagerPage() {
         copyDanger = true
         copyText = copy.error || t('devBadPath')
       }
+      copyNode = jsx('span', {
+        className: cn('min-w-0 break-words', copyDanger && DANGER),
+        children: copyText || '—'
+      }, 'copy-value')
     }
 
-    // Copying into the app's `desktop-plugins` needs a shell, and `shell.exec` is
-    // not callable from a desktop plugin (the gateway answers invalid_params), so
-    // the sync button stays hidden until that is solved agent-side.
-    const syncable = false
-    const syncing = syncingName === row.name
     const rereadButton = jsx(
       Button,
       {
         size: 'xs',
         variant: 'ghost',
         type: 'button',
-        disabled: loading || syncing,
+        disabled: loading,
         onClick: () => loadDev(row, true),
         children: t('devReread')
       },
@@ -1451,98 +1519,166 @@ function ManagerPage() {
     )
 
     return jsxs('div', {
-      className: 'mt-2',
-      children: jsxs('div', {
-        className: cn('grid grid-cols-[7rem_1fr] gap-y-1.5', CAPTION),
-        style: { gridTemplateColumns: '7rem 1fr' },
-        children: [
-          jsx('span', { className: GRID_LABEL, children: t('devState') }, 'dev-label'),
-          jsxs('div', {
-            className: 'flex min-w-0 flex-col gap-1',
-            children: [
-              gitNode,
+      className: 'flex flex-col gap-1.5',
+      children: [
+        jsxs('div', {
+          className: 'gap-x-3 gap-y-1.5 text-[length:var(--conversation-caption-font-size)]',
+          style: { display: 'grid', gridTemplateColumns: '6rem minmax(0, 1fr)' },
+          children: [
+            ...gridPair(t('devGitBranch'), gitNode, 'dev-git'),
+            ...gridPair(
+              t('devRunCopy'),
               jsxs('div', {
                 className: 'flex min-w-0 flex-wrap items-center gap-2',
-                children: [
-                  ready && copyText
-                    ? jsxs('span', {
-                        className: 'min-w-0',
-                        children: [
-                          jsx('span', { className: MUTED, children: `${t('devRunCopy')}: ` }, 'label'),
-                          jsx('span', { className: copyDanger ? DANGER : undefined, children: copyText }, 'value')
-                        ]
-                      }, 'copy-status')
-                    : null,
-                  syncable
-                    ? jsx(
-                        Button,
-                        {
-                          size: 'xs',
-                          variant: 'outline',
-                          type: 'button',
-                          disabled: !canSync || syncing,
-                          onClick: () => syncRow(row),
-                          children: syncing
-                            ? jsxs('span', {
-                                className: 'inline-flex items-center gap-1',
-                                children: [
-                                  jsx(GlyphSpinner, {}, 'spinner'),
-                                  jsx('span', { children: t('devLoading') }, 'text')
-                                ]
-                              })
-                            : t('syncToApp')
-                        },
-                        'sync'
-                      )
-                    : null,
-                  rereadButton
-                ]
-              }, 'copy-line'),
-              !canSync && !git.badPath
-                ? jsx('div', { className: DANGER, children: t('devBadPath') }, 'bad-path-note')
-                : null,
-              ready && state.claimed
-                ? jsx('div', { className: DANGER, children: t('devCopyClaimed') }, 'claimed')
-                : null,
-              ready && state.syncError
-                ? jsx('div', { className: DANGER, children: state.syncError }, 'sync-error')
-                : null
-            ]
-          }, 'dev-value')
-        ]
-      })
+                children: [copyNode, rereadButton]
+              }, 'dev-copy-line'),
+              'dev-copy'
+            )
+          ]
+        }),
+        ready && state.claimed
+          ? jsx('div', { className: cn(DANGER, CAPTION), children: t('devCopyClaimed') }, 'claimed')
+          : null
+      ]
     })
   }
 
-  const renderRow = row => {
-    const id = rowKeyOf(row)
-    const isOpen = openId === id
-    const busy = busyName === row.name
-    const sourceKey = sourceKeyOf(row)
+  const renderListRow = row => {
+    const selected = row.name === selectedName
     const enabled = row.status === 'enabled'
-    const desktopOnly = Boolean(row.desktop_only)
+    const busy = busyName === row.name
+    return jsxs(
+      'button',
+      {
+        type: 'button',
+        title: row.name,
+        onClick: () => {
+          haptic('tap')
+          pickedRef.current = true
+          setSelectedName(row.name)
+        },
+        className: cn(
+          'mx-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors',
+          'text-[length:var(--conversation-caption-font-size)]',
+          selected ? 'bg-accent text-foreground' : 'hover:bg-accent/40',
+          busy && 'opacity-60'
+        ),
+        children: [
+          jsx(
+            'span',
+            {
+              className: cn(
+                'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                enabled ? 'bg-emerald-500' : 'bg-(--ui-text-tertiary)'
+              ),
+              'aria-hidden': true
+            },
+            'dot'
+          ),
+          jsx('span', { className: 'min-w-0 flex-1 truncate', children: row.name }, 'name'),
+          busy
+            ? jsx(GlyphSpinner, {}, 'spinner')
+            : row.update_available
+              ? jsx(
+                  'span',
+                  {
+                    className: 'shrink-0 text-(--ui-text-tertiary)',
+                    'aria-hidden': true,
+                    children: '↑'
+                  },
+                  'update'
+                )
+              : null
+        ]
+      },
+      rowKeyOf(row)
+    )
+  }
+
+  const detailSection = (title, content, first) =>
+    jsxs(
+      'section',
+      {
+        className: first ? '' : 'mt-4',
+        children: [
+          jsx(
+            'h2',
+            {
+              className:
+                'mb-1.5 text-[0.65rem] uppercase tracking-wide text-(--ui-text-quaternary)',
+              children: title
+            },
+            'title'
+          ),
+          content
+        ]
+      },
+      `section-${title}`
+    )
+
+  const renderDetail = () => {
+    const row = currentRow
+    if (!row) return null
+    const busy = busyName === row.name
+    const enabled = row.status === 'enabled'
+    const sourceKey = sourceKeyOf(row)
 
     const facts = []
     if (row.key) facts.push(enabled ? t('statusEnabled') : t('statusDisabled'))
-    if (row.has_desktop_half) facts.push(t('hasDesktopHalf'))
+    if (row.has_desktop_half) facts.push(t('halfDesktop'))
     if (row.update_available) facts.push(t('updateAvailable'))
 
-    const keyedCells = [
+    const badges = []
+    if (row.source !== 'bundled') {
+      badges.push(jsx('span', { className: BADGE_CLASS, children: t(sourceKey) }, 'source'))
+    }
+    if (row.portable) {
+      badges.push(
+        jsx(
+          Tip,
+          {
+            label: t('portableTip'),
+            children: jsx('span', { className: BADGE_CLASS, children: t('portableBadge') })
+          },
+          'portable'
+        )
+      )
+    }
+    if (row.pinned_sha) {
+      badges.push(
+        jsx(
+          Tip,
+          {
+            label: t('pinnedTip'),
+            children: jsx('span', {
+              className: cn(BADGE_CLASS, 'font-mono'),
+              children: t('pinnedBadge', shortSha(row.pinned_sha))
+            })
+          },
+          'pinned'
+        )
+      )
+    }
+
+    const statusCells = [
       ...gridPair(
-        t('keyLabel'),
-        jsx('code', { className: 'min-w-0 break-all font-mono', children: row.key || '—' }),
-        'key'
+        t('enableTip'),
+        row.key ? (enabled ? t('statusEnabled') : t('statusDisabled')) : '—',
+        'enabled'
       ),
-      ...gridPair(t('sourceLabel'), t(sourceKey), 'source'),
-      ...gridPair(t('versionLabel'), row.version ? `v${row.version}` : '—', 'version'),
+      ...gridPair(t('halfAgent'), row.key ? t('halfYes') : t('halfNo'), 'agent-half'),
       ...gridPair(
-        t('hasDesktopHalf'),
-        row.has_desktop_half ? t('desktopHas') : t('desktopNone'),
-        'desktop'
+        t('halfDesktop'),
+        row.has_desktop_half ? t('halfYes') : t('halfNo'),
+        'desktop-half'
       )
     ]
+
+    const sourceCells = [
+      ...gridPair(t('sourceLabel'), t(sourceKey), 'source')
+    ]
     if (row.pinned_sha) {
-      keyedCells.push(
+      sourceCells.push(
         ...gridPair(
           t('pinnedLabel'),
           jsx('code', { className: 'min-w-0 break-all font-mono', children: shortSha(row.pinned_sha) }),
@@ -1551,7 +1687,7 @@ function ManagerPage() {
       )
     }
     if (row.update_available) {
-      keyedCells.push(
+      sourceCells.push(
         ...gridPair(
           t('upgradeLabel'),
           t(
@@ -1564,275 +1700,268 @@ function ManagerPage() {
       )
     }
 
-    const panel = isOpen
-      ? jsxs(
-          'div',
-          {
-            className:
-              'mb-3 mt-1 ml-4 rounded-lg border border-(--ui-stroke-tertiary) ' +
-              'bg-(--ui-bg-secondary) p-3',
-            children: [
-              jsx('div', {
-                className: cn(
-                  'grid grid-cols-[7rem_1fr] gap-y-1.5',
-                  CAPTION
-                ),
-                style: { gridTemplateColumns: '7rem 1fr' },
-                children: keyedCells
-              }, 'grid'),
-              jsxs('div', {
-                className: 'mt-2 flex min-w-0 items-center gap-2',
+    const pathNode = row.install_dir
+      ? jsxs('div', {
+          // Path on its own line: sharing it with the buttons squeezed the text
+          // into a ragged column.
+          className: 'flex min-w-0 flex-col gap-1.5',
+          children: [
+            jsx(
+              'code',
+              { className: 'min-w-0 break-all font-mono', children: row.install_dir },
+              'path'
+            ),
+            jsxs(
+              'div',
+              {
+                className: 'flex items-center gap-2',
                 children: [
-                  jsx('span', { className: cn('shrink-0', GRID_LABEL), children: t('detailPath') }, 'label'),
-                  jsx(
-                    'code',
-                    {
-                      className: cn('min-w-0 flex-1 truncate font-mono', CAPTION),
-                      children: row.install_dir || '—'
-                    },
-                    'path'
-                  ),
-                  row.install_dir
-                    ? jsx(
-                        CopyButton,
-                        {
-                          appearance: 'inline',
-                          text: row.install_dir,
-                          label: t('copyPath'),
-                          onCopied: () => notify('success', t('copied'))
-                        },
-                        'copy-path'
-                      )
-                    : null,
-                  row.install_dir
-                    ? jsx(
-                        Button,
-                        {
-                          size: 'xs',
-                          variant: 'ghost',
-                          type: 'button',
-                          onClick: () => revealPath(row.install_dir),
-                          children: t('openDir')
-                        },
-                        'open-dir'
-                      )
-                    : null
-                ]
-              }, 'path-line'),
-              row.has_desktop_half && row.install_dir ? devPanel(row) : null,
-              jsxs('div', {
-                className: 'mt-2 flex flex-wrap items-center gap-2',
-                children: [
-                  jsx(
-                    Button,
-                    {
-                      size: 'xs',
-                      variant: desktopOnly ? 'outline' : 'destructive',
-                      type: 'button',
-                      disabled: busy,
-                      onClick: () => setPendingRemove(row),
-                      children: desktopOnly ? t('uninstallDesktop') : t('uninstall')
-                    },
-                    'uninstall'
-                  ),
-                  jsx(
-                    CopyButton,
-                    {
-                      appearance: 'inline',
-                      text: `hermes plugins remove ${row.name}`,
-                      label: t('copyCommand')
-                    },
-                    'copy-command'
-                  )
-                ]
-              }, 'actions')
-            ]
-          },
-          'panel'
-        )
-      : null
-
-    return jsxs(
-      'div',
-      {
-        className: cn(ROW_CLASS, busy && 'pointer-events-none opacity-60'),
-        style: { marginLeft: '-0.5rem', marginRight: '-0.5rem' },
-        children: [
-          jsxs('div', {
-            className: 'flex items-start gap-3',
-            children: [
-              jsxs('div', {
-                className: 'min-w-0 flex-1',
-                children: [
-                  jsxs('div', {
-                    className:
-                      'flex min-w-0 flex-wrap items-center gap-2 ' +
-                      'text-[length:var(--conversation-text-font-size)]',
-                    children: [
-                      jsx(
-                        'span',
-                        {
-                          className: cn(
-                            'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-                            enabled ? 'bg-emerald-500' : 'bg-(--ui-text-tertiary)'
-                          ),
-                          'aria-hidden': true
-                        },
-                        'dot'
-                      ),
-                      jsx('span', { className: 'min-w-0 truncate font-medium', children: row.name }, 'name'),
-                      row.version
-                        ? jsx('span', { className: 'text-(--ui-text-quaternary)', children: `v${row.version}` }, 'version')
-                        : null,
-                      row.source !== 'bundled'
-                        ? jsx('span', { className: BADGE_CLASS, children: t(sourceKey) }, 'source')
-                        : null,
-                      row.portable
-                        ? jsx(
-                            Tip,
-                            {
-                              label: t('portableTip'),
-                              children: jsx('span', { className: BADGE_CLASS, children: t('portableBadge') })
-                            },
-                            'portable'
-                          )
-                        : null,
-                      row.pinned_sha
-                        ? jsx(
-                            Tip,
-                            {
-                              label: t('pinnedTip'),
-                              children: jsx('span', {
-                                className: cn(BADGE_CLASS, 'font-mono'),
-                                children: t('pinnedBadge', shortSha(row.pinned_sha))
-                              })
-                            },
-                            'pinned'
-                          )
-                        : null
-                    ]
-                  }),
-                  jsx(
-                    'div',
-                    {
-                      className:
-                        'mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 ' +
-                        'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-secondary)',
-                      children: facts.length ? facts.join(' · ') : null
-                    },
-                    'facts'
-                  )
-                ]
-              }),
-              jsxs('div', {
-                className: 'flex shrink-0 items-center gap-1.5',
-                children: [
-                  busy ? jsx(GlyphSpinner, {}, 'spinner') : null,
-                  !busy && row.update_available
-                    ? jsx(
-                        Button,
-                        {
-                          size: 'xs',
-                          variant: 'secondary',
-                          type: 'button',
-                          onClick: () => runUpdate(row),
-                          children: t('update')
-                        },
-                        'update'
-                      )
-                    : null,
-                  !busy && row.key
-                    ? jsx(
-                        Tip,
-                        {
-                          label: enabled ? t('disableTip') : t('enableTip'),
-                          children: jsx(Switch, {
-                            // No custom className: the app's Tailwind build never scans
-                            // this file, so invented utility classes don't exist in the
-                            // compiled CSS and the switch rendered as "off" while on.
-                            checked: enabled,
-                            size: 'xs',
-                            // The theme's checked track is nearly the same tone as the
-                            // page, so "on" was unreadable at a glance. Inline style, not
-                            // a utility class, because utility classes from here are not
-                            // in the compiled CSS.
-                            style: enabled ? { backgroundColor: 'var(--ui-accent, #7c5cff)' } : undefined,
-                            'aria-label': t('toggleAria', row.name),
-                            onCheckedChange: next => toggleRow(row, next)
-                          })
-                        },
-                        'switch'
-                      )
-                    : null,
                   jsx(
                     Button,
                     {
                       size: 'xs',
                       variant: 'ghost',
                       type: 'button',
-                      'aria-label': isOpen ? t('collapseRow') : t('expandRow'),
-                      'aria-expanded': isOpen,
-                      onClick: () => {
-                        haptic('tap')
-                        setOpenId(prev => (prev === id ? '' : id))
-                      },
-                      children: isOpen ? '▾' : '›'
+                      onClick: () => revealPath(row.install_dir),
+                      children: t('openDir')
                     },
-                    'disclosure'
+                    'open-dir'
+                  ),
+                  jsx(
+                    CopyButton,
+                    {
+                      appearance: 'inline',
+                      text: row.install_dir,
+                      label: t('copyPath'),
+                      onCopied: () => notify('success', t('copied'))
+                    },
+                    'copy-path'
                   )
                 ]
-              })
+              },
+              'path-actions'
+            )
+          ]
+        })
+      : jsx('span', { className: MUTED, children: '—' }, 'path-empty')
+
+    const actionButtons = [
+      busy ? jsx(GlyphSpinner, {}, 'spinner') : null,
+      row.source !== 'bundled'
+        ? jsx(
+            Button,
+            {
+              size: 'sm',
+              variant: 'ghost',
+              type: 'button',
+              onClick: () => toggleDev(row),
+              children: devSet.has(row.name) ? t('devUnmark') : t('devMark')
+            },
+            'dev-toggle'
+          )
+        : null,
+      row.update_available
+        ? jsx(
+            Button,
+            {
+              size: 'sm',
+              variant: 'secondary',
+              type: 'button',
+              disabled: busy,
+              onClick: () => runUpdate(row),
+              children: t('update')
+            },
+            'update'
+          )
+        : null,
+      row.key
+        ? jsx(
+            Button,
+            {
+              size: 'sm',
+              variant: 'outline',
+              type: 'button',
+              disabled: busy,
+              onClick: () => setPendingRemove({ row, mode: 'remove' }),
+              children: t('uninstall')
+            },
+            'uninstall'
+          )
+        : null,
+      row.has_desktop_half
+        ? jsx(
+            Button,
+            {
+              size: 'sm',
+              variant: 'outline',
+              type: 'button',
+              disabled: busy,
+              onClick: () => setPendingRemove({ row, mode: 'remove_desktop' }),
+              children: t('uninstallDesktop')
+            },
+            'uninstall-desktop'
+          )
+        : null,
+      jsx(
+        CopyButton,
+        {
+          appearance: 'inline',
+          text: `hermes plugins remove ${row.name}`,
+          label: t('copyCommand')
+        },
+        'copy-command'
+      )
+    ]
+
+    return jsxs(
+      'div',
+      {
+        className: 'flex flex-col',
+        children: [
+          jsxs('div', {
+            className: 'flex items-start justify-between gap-3',
+            children: [
+              jsxs('div', {
+                className: 'min-w-0',
+                children: [
+                  jsxs('div', {
+                    className: 'flex min-w-0 flex-wrap items-center gap-2',
+                    children: [
+                      jsx(
+                        'span',
+                        { className: 'min-w-0 truncate text-sm font-medium', children: row.name },
+                        'name'
+                      ),
+                      row.version
+                        ? jsx(
+                            'span',
+                            { className: 'text-(--ui-text-quaternary)', children: `v${row.version}` },
+                            'version'
+                          )
+                        : null,
+                      ...badges
+                    ]
+                  }),
+                  jsx(
+                    'div',
+                    {
+                      className: cn(CAPTION, MUTED),
+                      children: facts.length ? facts.join(' · ') : null
+                    },
+                    'facts'
+                  )
+                ]
+              }),
+              row.key
+                ? jsx(
+                    Tip,
+                    {
+                      label: enabled ? t('disableTip') : t('enableTip'),
+                      children: jsx(Switch, {
+                        checked: enabled,
+                        size: 'xs',
+                        style: enabled ? { backgroundColor: 'var(--ui-accent, #7c5cff)' } : undefined,
+                        'aria-label': t('toggleAria', row.name),
+                        onCheckedChange: next => toggleRow(row, next)
+                      })
+                    },
+                    'switch'
+                  )
+                : null
             ]
           }),
-          rowError && rowError.name === row.name
-            ? jsx('div', { className: cn(ERROR_BAR, 'mt-1.5'), children: rowError.message }, 'row-error')
+          detailSection(
+            t('detailStatus'),
+            jsx('div', {
+              className: 'gap-x-3 gap-y-1.5 text-[length:var(--conversation-caption-font-size)]',
+              // Inline grid: utility classes written here are not in the app's
+              // compiled Tailwind, so `grid-cols-[…]` silently did nothing and the
+              // labels stacked above their values.
+              style: { display: 'grid', gridTemplateColumns: '6rem minmax(0, 1fr)' },
+              children: statusCells
+            }, 'status-grid'),
+            true
+          ),
+          detailSection(
+            t('detailSourceSection'),
+            jsx('div', {
+              className: 'gap-x-3 gap-y-1.5 text-[length:var(--conversation-caption-font-size)]',
+              // Inline grid: utility classes written here are not in the app's
+              // compiled Tailwind, so `grid-cols-[…]` silently did nothing and the
+              // labels stacked above their values.
+              style: { display: 'grid', gridTemplateColumns: '6rem minmax(0, 1fr)' },
+              children: sourceCells
+            }, 'source-grid')
+          ),
+          row.has_desktop_half && row.install_dir
+            ? detailSection(t('devState'), devSection(row))
             : null,
-          panel
+          detailSection(t('detailPathSection'), pathNode),
+          detailSection(
+            t('detailActions'),
+            jsxs('div', {
+              className: 'flex flex-col gap-2',
+              children: [
+                rowError && rowError.name === row.name
+                  ? jsx('div', { className: ERROR_BAR, children: rowError.message }, 'row-error')
+                  : null,
+                jsx('div', {
+                  className: 'flex flex-wrap items-center gap-2 pt-1',
+                  children: actionButtons
+                }, 'actions')
+              ]
+            })
+          )
+        ]
+      },
+      rowKeyOf(row)
+    )
+  }
+
+  const groupHeader = (id, label, count, collapsible) => {
+    const className =
+      'flex w-full items-center gap-2 px-3 pt-3 pb-1 text-[0.65rem] uppercase tracking-wide ' +
+      'text-(--ui-text-quaternary)'
+    const body = [
+      jsx('span', { className: 'min-w-0 flex-1 truncate text-left', children: label }, 'label'),
+      jsx('span', { className: 'shrink-0 tabular-nums', children: count }, 'count')
+    ]
+    if (!collapsible) return jsxs('div', { className, children: body }, id)
+    return jsxs(
+      'button',
+      {
+        type: 'button',
+        onClick: () => toggleSection(id),
+        'aria-expanded': Boolean(expanded[id]),
+        className,
+        children: [
+          jsx(
+            'span',
+            { className: 'shrink-0', 'aria-hidden': true, children: expanded[id] ? '▾' : '▸' },
+            'chevron'
+          ),
+          ...body
         ]
       },
       id
     )
   }
 
-  const groupHeader = (id, label, count) =>
-    jsxs(
-      'button',
-      {
-        type: 'button',
-        onClick: () => toggleSection(id),
-        'aria-expanded': Boolean(expanded[id]),
-        className: GROUP_CLASS,
-        children: [
-          jsx(
-            'span',
-            { className: 'w-3 shrink-0 text-center', 'aria-hidden': true, children: expanded[id] ? '▾' : '▸' },
-            'chevron'
-          ),
-          jsx('span', { className: 'min-w-0 flex-1 truncate text-left', children: label }, 'label'),
-          jsx(
-            'span',
-            { className: 'shrink-0 tabular-nums normal-case tracking-normal', children: count },
-            'count'
-          )
-        ]
-      },
-      id
-    )
+  const listRows = rows =>
+    jsx('div', { className: 'flex flex-col pb-2', children: rows.map(renderListRow) }, 'rows')
 
-  const rowList = rows => jsx('div', { className: 'flex flex-col', children: rows.map(renderRow) }, 'rows')
-
-  const emptyBlock = (message, withClear) =>
+  const emptyBlock = (message, withClear, key = 'empty') =>
     jsxs(
       'div',
       {
-        className: 'py-12 text-center text-(--ui-text-tertiary)',
+        className:
+          'flex flex-col items-center gap-2 px-3 py-10 text-center text-(--ui-text-tertiary)',
         children: [
           jsx('div', { className: CAPTION, children: message }, 'message'),
           withClear
             ? jsx(
                 Button,
                 {
-                  className: 'mt-2',
                   size: 'xs',
                   variant: 'ghost',
                   type: 'button',
@@ -1844,33 +1973,24 @@ function ManagerPage() {
             : null
         ]
       },
-      'empty'
+      key
     )
 
-  const sectionBody = rows => {
-    if (rows.length) return rowList(rows)
-    if (filtering) return null
-    return emptyBlock(t('empty'), false)
-  }
-
-  const mineBody = () => {
-    if (filteredMine.length) return rowList(filteredMine)
-    if (filtering) return emptyBlock(t('emptyFiltered'), true)
-    return emptyBlock(t('empty'), false)
-  }
-
-  const body = () => {
+  const leftBody = () => {
     if (status === 'loading' && !allRows.length) {
       return jsxs('div', {
-        className: 'flex items-center justify-center gap-2 py-12 text-(--ui-text-tertiary)',
-        children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { className: CAPTION, children: t('loading') }, 'text')]
+        className: 'flex items-center justify-center gap-2 py-8 text-(--ui-text-tertiary)',
+        children: [
+          jsx(GlyphSpinner, {}, 'spinner'),
+          jsx('span', { className: CAPTION, children: t('loading') }, 'text')
+        ]
       })
     }
     if (status === 'error' && !allRows.length) {
       return jsxs('div', {
-        className: cn(ERROR_BAR, 'mt-3 flex flex-col items-start gap-2 py-3'),
+        className: 'flex flex-col gap-2 px-3 py-4',
         children: [
-          jsx('div', { children: t('loadFailed', loadError) }, 'message'),
+          jsx('div', { className: ERROR_BAR, children: t('loadFailed', loadError) }, 'message'),
           jsx(
             Button,
             { size: 'xs', variant: 'outline', type: 'button', onClick: refresh, children: t('retry') },
@@ -1879,399 +1999,464 @@ function ManagerPage() {
         ]
       })
     }
+    const hasMine = filteredDev.length + filteredInstalled.length
     return jsxs('div', {
       className: 'flex flex-col',
       children: [
         devRows.length
           ? jsxs('section', {
-              className: 'mt-2',
               children: [
-                groupHeader('dev', t('devGroup'), devRows.length),
-                expanded.dev ? sectionBody(filteredDev) : null
+                groupHeader('dev', t('devGroup'), devRows.length, false),
+                listRows(filteredDev)
               ]
             }, 'dev')
           : null,
         installedRows.length
           ? jsxs('section', {
-              className: devRows.length ? 'mt-4' : 'mt-2',
               children: [
-                groupHeader('installed', t('installedGroup'), installedRows.length),
-                expanded.installed ? sectionBody(filteredInstalled) : null
+                groupHeader('installed', t('installedGroup'), installedRows.length, false),
+                listRows(filteredInstalled)
               ]
             }, 'installed')
           : null,
-        !devRows.length && !installedRows.length && filtering
-          ? jsxs('section', { className: 'mt-2', children: mineBody() }, 'mine-empty')
-          : null,
+        !hasMine && filtering ? emptyBlock(t('emptyFiltered'), true, 'filtered-empty') : null,
         bundledRows.length
           ? jsxs('section', {
-              className: 'mt-4',
               children: [
-                groupHeader('bundled', t('bundledGroup'), bundledRows.length),
-                expanded.bundled ? rowList(bundledRows) : null
+                groupHeader('bundled', t('bundledGroup'), bundledRows.length, true),
+                expanded.bundled ? listRows(bundledRows) : null
               ]
             }, 'bundled')
+          : null,
+        !allRows.length ? emptyBlock(t('empty'), false, 'no-plugins') : null
+      ]
+    })
+  }
+
+  const rightBody = () => {
+    const loadingFirst = status === 'loading' && !allRows.length
+    if (loadingFirst) {
+      return jsxs('div', {
+        className: 'flex h-full items-center justify-center gap-2 text-(--ui-text-tertiary)',
+        children: [
+          jsx(GlyphSpinner, {}, 'spinner'),
+          jsx('span', { className: CAPTION, children: t('loading') }, 'text')
+        ]
+      })
+    }
+    const detail = renderDetail()
+    if (detail) return detail
+    let message = t('selectHint')
+    let withClear = false
+    if (!allRows.length) {
+      message = status === 'error' ? t('loadFailed', loadError) : t('empty')
+    } else if (filtering && !selectableRows.length) {
+      message = t('emptyFiltered')
+      withClear = true
+    }
+    return jsxs('div', {
+      className: 'flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-(--ui-text-tertiary)',
+      children: [
+        jsx('div', { className: CAPTION, children: message }, 'message'),
+        withClear
+          ? jsx(
+              Button,
+              {
+                size: 'xs',
+                variant: 'ghost',
+                type: 'button',
+                onClick: clearFilters,
+                children: t('clearFilters')
+              },
+              'clear'
+            )
           : null
       ]
     })
   }
 
+  const pendingTarget = pendingRemove && pendingRemove.row
+  const pendingDesktop = Boolean(pendingRemove && pendingRemove.mode === 'remove_desktop')
+
   return jsxs('div', {
-    className: 'h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]',
-    children: jsxs('div', {
-      className: 'mx-auto w-full max-w-3xl px-4 pb-6 pt-4',
-      children: [
-        jsxs('div', {
-          className:
-            'sticky top-0 z-10 -mx-4 -mt-4 border-b border-(--ui-stroke-tertiary) ' +
-            'bg-background/90 px-4 py-3 backdrop-blur',
-          style: { marginTop: '-1rem' },
-          children: [
-            jsxs('div', {
-              className: 'flex min-w-0 flex-wrap items-center justify-between gap-3',
-              children: [
-                jsxs('div', {
-                  className: 'min-w-0',
-                  children: [
-                    jsx('div', { className: 'text-sm font-medium', children: t('title') }, 'title'),
-                    jsx(
-                      'div',
-                      {
-                        className: cn('truncate', CAPTION, MUTED),
-                        children: refreshing
-                          ? `${t('statusLine', counts.dev, counts.installed, counts.bundled, allUpdates)} · ${t('loading')}`
-                          : t('statusLine', counts.dev, counts.installed, counts.bundled, allUpdates)
-                      },
-                      'status'
-                    ),
-                    versionWarn
-                      ? jsx('div', { className: cn(CAPTION, DANGER), children: t('requiresVersionWarn', MIN_HERMES) }, 'version')
-                      : null
-                  ]
-                }),
-                jsxs('div', {
-                  className: 'flex shrink-0 flex-wrap items-center justify-end gap-1.5',
-                  children: [
-                    jsx(
-                      Button,
-                      {
-                        size: 'xs',
-                        variant: 'secondary',
-                        type: 'button',
-                        disabled: bulkUpdating || allUpdates === 0,
-                        onClick: runUpdateAll,
-                        children: bulkUpdating
-                          ? jsxs('span', {
-                              className: 'inline-flex items-center gap-1.5',
-                              children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { children: t('updatingAll') }, 'text')]
-                            })
-                          : t('updateAll')
-                      },
-                      'update-all'
-                    ),
-                    jsx(
-                      Button,
-                      {
-                        size: 'xs',
-                        variant: installOpen ? 'secondary' : 'outline',
-                        type: 'button',
-                        onClick: () => {
-                          haptic('tap')
-                          setInstallOpen(open => !open)
-                          setInspect({ status: 'idle' })
-                          setActionError('')
-                        },
-                        children: t('installFromGit')
-                      },
-                      'install'
-                    ),
-                    jsx(
-                      Tip,
-                      {
-                        label: t('refresh'),
-                        children: jsx(Button, {
-                          size: 'icon-xs',
-                          variant: 'ghost',
-                          type: 'button',
-                          'aria-label': t('refresh'),
-                          disabled: refreshing,
-                          onClick: refresh,
-                          children: refreshing
-                            ? jsx(GlyphSpinner, {})
-                            : jsx('span', { 'aria-hidden': true, children: '⟳' })
-                        })
-                      },
-                      'refresh'
-                    )
-                  ]
-                })
-              ]
-            })
-          ]
-        }),
-
-        jsxs('div', {
-          className: 'mt-3 flex min-w-0 flex-wrap items-center gap-1',
-          children: [
-            chip('all', t('filterAll', counts.mine)),
-            chip('enabled', t('filterEnabled', counts.enabled)),
-            chip('disabled', t('filterDisabled', counts.mine - counts.enabled)),
-            chip('desktop', t('filterDesktop', counts.desktop)),
-            chip('updates', t('filterUpdates', counts.updates)),
-            jsx('div', { className: 'flex-1' }, 'spacer'),
-            jsx(
-              'input',
-              {
-                value: query,
-                onChange: event => setQuery(event.target.value),
-                placeholder: t('search'),
-                'aria-label': t('search'),
-                className: cn(INPUT_CLASS, 'w-52')
-              },
-              'search'
-            )
-          ]
-        }),
-
-        installOpen
-          ? jsxs('div', {
-              className: cn(PANEL_CLASS, 'mt-3'),
-              children: [
-                jsx('div', { className: 'text-sm font-medium', children: t('gitTitle') }, 'title'),
-                jsxs('div', {
-                  className: 'flex min-w-0 flex-wrap items-end gap-2',
-                  children: [
-                    jsxs('label', {
-                      className: 'flex min-w-0 flex-1 flex-col gap-1',
-                      children: [
-                        jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRepo') }, 'label'),
-                        jsx('input', {
-                          value: installRepo,
-                          onChange: event => setInstallRepo(event.target.value),
-                          placeholder: t('gitRepoPlaceholder'),
-                          'aria-label': t('gitRepo'),
-                          className: cn(INPUT_CLASS, 'w-full')
-                        }, 'input')
-                      ]
-                    }, 'repo'),
-                    jsxs('label', {
-                      className: 'flex w-64 flex-col gap-1',
-                      children: [
-                        jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRef') }, 'label'),
-                        jsx('input', {
-                          value: installRef,
-                          onChange: event => setInstallRef(event.target.value),
-                          placeholder: t('gitRefPlaceholder'),
-                          'aria-label': t('gitRef'),
-                          spellCheck: false,
-                          className: cn(INPUT_CLASS, 'w-full font-mono')
-                        }, 'input')
-                      ]
-                    }, 'ref'),
-                    jsx(
-                      Button,
-                      {
-                        size: 'xs',
-                        variant: 'outline',
-                        type: 'button',
-                        disabled: inspect.status === 'checking',
-                        onClick: runInspect,
-                        children: t('check')
-                      },
-                      'check'
-                    )
-                  ]
-                }),
-                inspectPanel()
-              ]
-            }, 'install-panel')
-          : null,
-
-        scan
-          ? jsxs('div', {
-              className:
-                'mt-3 flex flex-col gap-2 rounded-lg border border-destructive/40 ' +
-                'bg-destructive/10 p-3 text-[length:var(--conversation-caption-font-size)]',
-              children: [
-                jsx('div', { className: 'text-sm font-medium', children: t('scanTitle') }, 'title'),
-                scan.verdict
-                  ? jsx('div', { className: MUTED, children: t('scanVerdict', scan.verdict) }, 'verdict')
-                  : null,
-                scan.findings.length
-                  ? jsxs('div', {
-                      className: 'flex flex-col gap-0.5',
-                      children: [
-                        jsx('div', { className: MUTED, children: t('scanFindings') }, 'label'),
-                        ...scan.findings.map((finding, index) =>
-                          jsx('div', { className: 'break-words', children: String(finding) }, `finding-${index}`)
-                        )
-                      ]
-                    })
-                  : null,
-                jsxs('div', {
-                  className: 'flex flex-wrap items-center gap-2',
-                  children: [
-                    scan.verdict === 'caution'
-                      ? jsx(
-                          Button,
-                          {
-                            size: 'xs',
-                            variant: 'destructive',
-                            type: 'button',
-                            disabled: busyName === scan.row.name,
-                            onClick: () => {
-                              const target = scan
-                              setScan(null)
-                              void runUpdate(target.row, {
-                                force: true,
-                                ...(target.accept ? { accept_capabilities: true } : {})
-                              })
-                            },
-                            children: t('stillUpdate')
-                          },
-                          'still'
-                        )
-                      : null,
-                    jsx(
-                      Button,
-                      { size: 'xs', variant: 'ghost', type: 'button', onClick: () => setScan(null), children: t('close') },
-                      'close'
-                    )
-                  ]
-                })
-              ]
-            }, 'scan')
-          : null,
-
-        bulkResult
-          ? jsxs('div', {
-              className: cn(PANEL_CLASS, 'mt-3', CAPTION),
-              children: [
-                ...bulkResult.results.map((result, index) =>
-                  jsxs(
+    className: 'flex h-full min-h-0 flex-col',
+    children: [
+      jsxs('div', {
+        className:
+          'flex min-w-0 items-center justify-between gap-3 border-b ' +
+          'border-(--ui-stroke-tertiary) px-4 py-3',
+        children: [
+          jsxs('div', {
+            className: 'min-w-0',
+            children: [
+              jsx('div', { className: 'text-sm font-medium', children: t('title') }, 'title'),
+              jsx(
+                'div',
+                {
+                  className: cn('truncate', CAPTION, MUTED),
+                  children: refreshing
+                    ? `${t('statusLine', counts.dev, counts.installed, counts.bundled, allUpdates)} · ${t('loading')}`
+                    : t('statusLine', counts.dev, counts.installed, counts.bundled, allUpdates)
+                },
+                'status'
+              ),
+              versionWarn
+                ? jsx(
                     'div',
-                    {
-                      className: 'flex min-w-0 gap-2',
-                      children: [
-                        jsx('span', { className: 'w-40 shrink-0 truncate font-medium', children: result.name }, 'name'),
-                        jsx(
-                          'span',
-                          {
-                            className:
-                              result.status === 'failed' || result.status === 'needs_review' ? DANGER : MUTED,
-                            children: t(
-                              result.status === 'updated'
-                                ? 'statusUpdated'
-                                : result.status === 'current'
-                                  ? 'statusCurrent'
-                                  : result.status === 'needs_review'
-                                    ? 'statusNeedsReview'
-                                    : 'statusFailed'
-                            )
-                          },
-                          'status'
-                        ),
-                        result.detail
-                          ? jsx(
-                              'span',
-                              { className: cn('min-w-0 flex-1 break-words', MUTED), children: result.detail },
-                              'detail'
-                            )
-                          : null
-                      ]
-                    },
-                    `result-${index}`
+                    { className: cn(CAPTION, DANGER), children: t('requiresVersionWarn', MIN_HERMES) },
+                    'version'
                   )
-                ),
-                bulkResult.skipped.length
-                  ? jsxs('div', {
-                      className: 'mt-1 flex flex-col gap-1 border-t border-(--ui-stroke-tertiary) pt-1',
-                      children: [
-                        jsx('div', { className: MUTED, children: t('skippedLabel') }, 'label'),
-                        ...bulkResult.skipped.map((skip, index) =>
-                          jsxs(
-                            'div',
-                            {
-                              className: 'flex min-w-0 gap-2',
-                              children: [
-                                jsx('span', { className: 'w-40 shrink-0 truncate font-medium', children: skip.name }, 'name'),
-                                jsx(
-                                  'span',
-                                  { className: cn('min-w-0 flex-1 break-words', MUTED), children: skip.reason },
-                                  'reason'
-                                )
-                              ]
-                            },
-                            `skip-${index}`
-                          )
-                        )
-                      ]
-                    }, 'skipped')
-                  : null,
-                !bulkResult.results.length && !bulkResult.skipped.length
-                  ? jsx('div', { className: MUTED, children: t('updateAllNoResult') }, 'none')
-                  : null,
-                bulkResult.results.some(result => result.status === 'needs_review')
-                  ? jsx('div', { className: DANGER, children: t('updateAllReviewHint') }, 'review')
-                  : null,
-                jsx('div', {
-                  className: 'flex justify-end',
+                : null
+            ]
+          }),
+          jsxs('div', {
+            className: 'flex shrink-0 flex-wrap items-center justify-end gap-1.5',
+            children: [
+              jsx(
+                Button,
+                {
+                  size: 'sm',
+                  variant: 'secondary',
+                  type: 'button',
+                  disabled: bulkUpdating || allUpdates === 0,
+                  onClick: runUpdateAll,
+                  children: bulkUpdating
+                    ? jsxs('span', {
+                        className: 'inline-flex items-center gap-1.5',
+                        children: [
+                          jsx(GlyphSpinner, {}, 'spinner'),
+                          jsx('span', { children: t('updatingAll') }, 'text')
+                        ]
+                      })
+                    : t('updateAll')
+                },
+                'update-all'
+              ),
+              jsx(
+                Button,
+                {
+                  size: 'sm',
+                  variant: installOpen ? 'secondary' : 'outline',
+                  type: 'button',
+                  onClick: () => {
+                    haptic('tap')
+                    setInstallOpen(open => !open)
+                    setInspect({ status: 'idle' })
+                    setActionError('')
+                  },
+                  children: t('installFromGit')
+                },
+                'install'
+              ),
+              jsx(
+                Tip,
+                {
+                  label: t('refresh'),
                   children: jsx(Button, {
-                    size: 'xs',
+                    size: 'sm',
                     variant: 'ghost',
                     type: 'button',
-                    onClick: () => setBulkResult(null),
-                    children: t('close')
+                    'aria-label': t('refresh'),
+                    disabled: refreshing,
+                    onClick: refresh,
+                    children: refreshing
+                      ? jsx(GlyphSpinner, {})
+                      : jsx('span', { 'aria-hidden': true, children: '⟳' })
                   })
-                }, 'close')
-              ]
-            }, 'bulk')
-          : null,
-
-        loadError && allRows.length
-          ? jsx('div', { className: cn(ERROR_BAR, 'mt-3'), children: t('loadFailed', loadError) }, 'load-error')
-          : null,
-        actionError
-          ? jsx('div', { className: cn(ERROR_BAR, 'mt-3'), children: actionError }, 'action-error')
-          : null,
-
-        body(),
-
-        jsx(ConfirmDialog, {
-          open: Boolean(pendingRemove),
-          onClose: () => setPendingRemove(null),
-          onConfirm: doRemove,
-          title: pendingRemove
-            ? pendingRemove.desktop_only
-              ? t('removeDesktopTitle', pendingRemove.name)
-              : t('removeTitle', pendingRemove.name)
-            : '',
-          description: pendingRemove
-            ? pendingRemove.desktop_only
-              ? t('removeDesktopBody', pendingRemove.name)
-              : t('removeBody', pendingRemove.name)
-            : '',
-          confirmLabel:
-            pendingRemove && pendingRemove.desktop_only ? t('uninstallDesktop') : t('uninstall'),
-          destructive: true
-        }),
-        jsx(ConfirmDialog, {
-          open: Boolean(consent),
-          onClose: () => setConsent(null),
-          onConfirm: async () => {
-            const target = consent
-            if (!target) return
-            setConsent(null)
-            await runUpdate(target.row, { accept_capabilities: true })
-          },
-          title: consent ? t('consentTitle', consent.row.name) : '',
-          description: consent
-            ? `${t('consentBody')}\n\n${consent.lines.map(line => `• ${line}`).join('\n')}`
-            : '',
-          confirmLabel: t('consentGo')
-        })
-      ]
-    })
+                },
+                'refresh'
+              )
+            ]
+          })
+        ]
+      }),
+      jsxs('div', {
+        className: 'flex min-h-0 flex-1',
+        children: [
+          jsxs('div', {
+            className:
+              'flex min-h-0 w-[19rem] shrink-0 flex-col border-r ' +
+              'border-(--ui-stroke-tertiary)',
+            children: [
+              jsxs('div', {
+                className:
+                  'flex flex-col gap-1.5 border-b border-(--ui-stroke-tertiary) px-2 py-2',
+                children: [
+                  jsx(
+                    'input',
+                    {
+                      value: query,
+                      onChange: event => setQuery(event.target.value),
+                      placeholder: t('search'),
+                      'aria-label': t('search'),
+                      className:
+                        'h-8 w-full rounded-md border border-(--ui-stroke-tertiary) ' +
+                        'bg-(--ui-bg-input) px-2 outline-none ' +
+                        'text-[length:var(--conversation-caption-font-size)]'
+                    },
+                    'search'
+                  ),
+                  jsxs('div', {
+                    className: 'flex flex-wrap items-center gap-1',
+                    children: [
+                      chip('all', t('filterAll', counts.mine)),
+                      chip('enabled', t('filterEnabled', counts.enabled)),
+                      chip('disabled', t('filterDisabled', counts.mine - counts.enabled)),
+                      chip('desktop', t('filterDesktop', counts.desktop)),
+                      chip('updates', t('filterUpdates', counts.updates))
+                    ]
+                  })
+                ]
+              }),
+              jsx(
+                'div',
+                {
+                  className: 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+                  children: leftBody()
+                },
+                'list'
+              )
+            ]
+          }),
+          jsxs('div', {
+            className: 'min-w-0 flex-1 overflow-y-auto px-5 py-4',
+            children: [
+              loadError && allRows.length
+                ? jsx('div', { className: cn(ERROR_BAR, 'mb-3'), children: t('loadFailed', loadError) }, 'load-error')
+                : null,
+              actionError
+                ? jsx('div', { className: cn(ERROR_BAR, 'mb-3'), children: actionError }, 'action-error')
+                : null,
+              installOpen
+                ? jsxs('div', {
+                    className: cn(PANEL_CLASS, 'mb-4'),
+                    children: [
+                      jsx('div', { className: 'text-sm font-medium', children: t('gitTitle') }, 'title'),
+                      jsxs('div', {
+                        className: 'flex min-w-0 flex-wrap items-end gap-2',
+                        children: [
+                          jsxs('label', {
+                            className: 'flex min-w-0 flex-1 flex-col gap-1',
+                            children: [
+                              jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRepo') }, 'label'),
+                              jsx('input', {
+                                value: installRepo,
+                                onChange: event => setInstallRepo(event.target.value),
+                                placeholder: t('gitRepoPlaceholder'),
+                                'aria-label': t('gitRepo'),
+                                className: cn(INPUT_CLASS, 'w-full')
+                              }, 'input')
+                            ]
+                          }, 'repo'),
+                          jsxs('label', {
+                            className: 'flex w-64 flex-col gap-1',
+                            children: [
+                              jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRef') }, 'label'),
+                              jsx('input', {
+                                value: installRef,
+                                onChange: event => setInstallRef(event.target.value),
+                                placeholder: t('gitRefPlaceholder'),
+                                'aria-label': t('gitRef'),
+                                spellCheck: false,
+                                className: cn(INPUT_CLASS, 'w-full font-mono')
+                              }, 'input')
+                            ]
+                          }, 'ref'),
+                          jsx(
+                            Button,
+                            {
+                              size: 'xs',
+                              variant: 'outline',
+                              type: 'button',
+                              disabled: inspect.status === 'checking',
+                              onClick: runInspect,
+                              children: t('check')
+                            },
+                            'check'
+                          )
+                        ]
+                      }),
+                      inspectPanel()
+                    ]
+                  }, 'install-panel')
+                : null,
+              scan
+                ? jsxs('div', {
+                    className:
+                      'mb-4 flex flex-col gap-2 rounded-lg border border-destructive/40 ' +
+                      'bg-destructive/10 p-3 text-[length:var(--conversation-caption-font-size)]',
+                    children: [
+                      jsx('div', { className: 'text-sm font-medium', children: t('scanTitle') }, 'title'),
+                      scan.verdict
+                        ? jsx('div', { className: MUTED, children: t('scanVerdict', scan.verdict) }, 'verdict')
+                        : null,
+                      scan.findings.length
+                        ? jsxs('div', {
+                            className: 'flex flex-col gap-0.5',
+                            children: [
+                              jsx('div', { className: MUTED, children: t('scanFindings') }, 'label'),
+                              ...scan.findings.map((finding, index) =>
+                                jsx('div', { className: 'break-words', children: String(finding) }, `finding-${index}`)
+                              )
+                            ]
+                          })
+                        : null,
+                      jsxs('div', {
+                        className: 'flex flex-wrap items-center gap-2',
+                        children: [
+                          scan.verdict === 'caution'
+                            ? jsx(
+                                Button,
+                                {
+                                  size: 'xs',
+                                  variant: 'destructive',
+                                  type: 'button',
+                                  disabled: busyName === scan.row.name,
+                                  onClick: () => {
+                                    const target = scan
+                                    setScan(null)
+                                    void runUpdate(target.row, {
+                                      force: true,
+                                      ...(target.accept ? { accept_capabilities: true } : {})
+                                    })
+                                  },
+                                  children: t('stillUpdate')
+                                },
+                                'still'
+                              )
+                            : null,
+                          jsx(
+                            Button,
+                            { size: 'xs', variant: 'ghost', type: 'button', onClick: () => setScan(null), children: t('close') },
+                            'close'
+                          )
+                        ]
+                      })
+                    ]
+                  }, 'scan')
+                : null,
+              bulkResult
+                ? jsxs('div', {
+                    className: cn(PANEL_CLASS, 'mb-4', CAPTION),
+                    children: [
+                      ...bulkResult.results.map((result, index) =>
+                        jsxs(
+                          'div',
+                          {
+                            className: 'flex min-w-0 gap-2',
+                            children: [
+                              jsx('span', { className: 'w-40 shrink-0 truncate font-medium', children: result.name }, 'name'),
+                              jsx(
+                                'span',
+                                {
+                                  className:
+                                    result.status === 'failed' || result.status === 'needs_review' ? DANGER : MUTED,
+                                  children: t(
+                                    result.status === 'updated'
+                                      ? 'statusUpdated'
+                                      : result.status === 'current'
+                                        ? 'statusCurrent'
+                                        : result.status === 'needs_review'
+                                          ? 'statusNeedsReview'
+                                          : 'statusFailed'
+                                  )
+                                },
+                                'status'
+                              ),
+                              result.detail
+                                ? jsx(
+                                    'span',
+                                    { className: cn('min-w-0 flex-1 break-words', MUTED), children: result.detail },
+                                    'detail'
+                                  )
+                                : null
+                            ]
+                          },
+                          `result-${index}`
+                        )
+                      ),
+                      bulkResult.skipped.length
+                        ? jsxs('div', {
+                            className: 'mt-1 flex flex-col gap-1 border-t border-(--ui-stroke-tertiary) pt-1',
+                            children: [
+                              jsx('div', { className: MUTED, children: t('skippedLabel') }, 'label'),
+                              ...bulkResult.skipped.map((skip, index) =>
+                                jsxs(
+                                  'div',
+                                  {
+                                    className: 'flex min-w-0 gap-2',
+                                    children: [
+                                      jsx('span', { className: 'w-40 shrink-0 truncate font-medium', children: skip.name }, 'name'),
+                                      jsx(
+                                        'span',
+                                        { className: cn('min-w-0 flex-1 break-words', MUTED), children: skip.reason },
+                                        'reason'
+                                      )
+                                    ]
+                                  },
+                                  `skip-${index}`
+                                )
+                              )
+                            ]
+                          }, 'skipped')
+                        : null,
+                      !bulkResult.results.length && !bulkResult.skipped.length
+                        ? jsx('div', { className: MUTED, children: t('updateAllNoResult') }, 'none')
+                        : null,
+                      bulkResult.results.some(result => result.status === 'needs_review')
+                        ? jsx('div', { className: DANGER, children: t('updateAllReviewHint') }, 'review')
+                        : null,
+                      jsx('div', {
+                        className: 'flex justify-end',
+                        children: jsx(Button, {
+                          size: 'xs',
+                          variant: 'ghost',
+                          type: 'button',
+                          onClick: () => setBulkResult(null),
+                          children: t('close')
+                        })
+                      }, 'close')
+                    ]
+                  }, 'bulk')
+                : null,
+              rightBody()
+            ]
+          })
+        ]
+      }),
+      jsx(ConfirmDialog, {
+        open: Boolean(pendingRemove),
+        onClose: () => setPendingRemove(null),
+        onConfirm: doRemove,
+        title: pendingTarget
+          ? pendingDesktop
+            ? t('removeDesktopTitle', pendingTarget.name)
+            : t('removeTitle', pendingTarget.name)
+          : '',
+        description: pendingTarget
+          ? pendingDesktop
+            ? t('removeDesktopBody', pendingTarget.name)
+            : t('removeBody', pendingTarget.name)
+          : '',
+        confirmLabel: pendingDesktop ? t('uninstallDesktop') : t('uninstall'),
+        destructive: true
+      }),
+      jsx(ConfirmDialog, {
+        open: Boolean(consent),
+        onClose: () => setConsent(null),
+        onConfirm: async () => {
+          const target = consent
+          if (!target) return
+          setConsent(null)
+          await runUpdate(target.row, { accept_capabilities: true })
+        },
+        title: consent ? t('consentTitle', consent.row.name) : '',
+        description: consent
+          ? `${t('consentBody')}\n\n${consent.lines.map(line => `• ${line}`).join('\n')}`
+          : '',
+        confirmLabel: t('consentGo')
+      })
+    ]
   })
 }
 
