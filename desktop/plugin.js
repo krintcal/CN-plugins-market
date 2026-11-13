@@ -34,8 +34,6 @@ const PAGE_PATH = '/cn-plugins-market'
 /** The backend surface this page drives (install_desktop, remove_desktop, inspect). */
 const MIN_HERMES = '0.22.5'
 const PREFS_KEY = 'prefs'
-/** A git remote under this account means "the user develops this one". */
-const DEV_REMOTE_RE = /github[.]com[:/]krintcal[/]/i
 const REF_RE = /^[0-9a-f]{40}$/i
 const FILTERS = ['all', 'enabled', 'disabled', 'desktop', 'updates']
 
@@ -62,6 +60,11 @@ const DANGER = 'text-destructive'
 const MESSAGES = {
   en: {
     nav: 'Plugin manager',
+    inspectRefMismatch: 'The requested ref differs from the inspected commit. This gateway can only inspect the current source revision.',
+    devGitUnavailable: 'Git metadata is unavailable through the desktop bridge',
+    devStandalone: 'Standalone desktop plugin; no separate source copy',
+    devCopyIncomplete: 'Cannot compare incomplete file reads',
+    ambiguousActions: 'Several agent entries share this name. Update and uninstall require an unambiguous name.',
     title: 'Plugin manager',
     statusLine: (dev, installed, bundled, updates) =>
       `${dev} developing · ${installed} installed · ${bundled} built-in · ${updates} update${updates === 1 ? '' : 's'}`,
@@ -108,7 +111,6 @@ const MESSAGES = {
     filterDesktop: n => `Desktop half ${n}`,
     filterUpdates: n => `Updates ${n}`,
     empty: 'No installed plugins',
-    emptyHint: 'Install one from Git, or check that the gateway is connected.',
     emptyFiltered: 'No plugins match this filter.',
     clearFilters: 'Clear filters',
     sourceBundled: 'Built-in',
@@ -122,8 +124,6 @@ const MESSAGES = {
     pinnedTip: 'It will not follow updates until it is re-pinned.',
     statusEnabled: 'enabled',
     statusDisabled: 'disabled',
-    desktopHas: 'yes',
-    desktopNone: 'no',
     detailStatus: 'Status',
     detailSourceSection: 'Source & updates',
     detailPathSection: 'Path',
@@ -135,9 +135,6 @@ const MESSAGES = {
     halfNo: 'no',
     requiresVersionWarn: version => `needs ≥${version} (this app is older)`,
     update: 'Update',
-    updating: 'Updating…',
-    expandRow: 'Show details',
-    collapseRow: 'Hide details',
     toggleAria: name => `Enable or disable ${name}`,
     enableTip: 'Enable',
     disableTip: 'Disable',
@@ -156,13 +153,10 @@ const MESSAGES = {
     scanFindings: 'Findings',
     stillUpdate: 'Update anyway',
     close: 'Close',
-    detailPath: 'Install path',
     copyPath: 'Copy path',
     copied: 'Copied',
     openDir: 'Open folder',
     openDirFailed: 'Could not open that folder',
-    keyLabel: 'Key',
-    versionLabel: 'Version',
     pinnedLabel: 'Pinned SHA',
     upgradeLabel: 'Upgrade',
     upgradeValue: (version, sha) => `catalog ${version || '—'} · target ${sha || '—'}`,
@@ -177,25 +171,18 @@ const MESSAGES = {
     uninstalled: name => `${name} uninstalled. Restart the gateway for it to fully unload.`,
     removeDesktopDone: name => `${name} desktop half removed.`,
     removeFailed: message => `Uninstall failed: ${message}`,
-    copyCommand: 'Copy command',
     devMark: 'Mark as mine',
     devUnmark: 'Not mine',
     devState: 'Dev',
     devGitBranch: 'git',
-    devGitDirty: n => `${n} uncommitted`,
-    devGitAhead: (a, b) => `↑${a}↓${b}`,
-    devGitLast: 'Last commit',
-    devNotGit: 'Not a Git repository',
     devCopySynced: 'In sync',
     devCopyPending: 'Needs sync',
     devCopyNoSource: 'Source missing',
     devCopyMissing: 'Running copy missing',
     devCopyClaimed: 'Claimed by Hermes (opt-in) — hidden from the sidebar by default',
-    syncToApp: 'Sync to running copy',
     devReread: 'Re-read',
     devLoading: 'Reading…',
     devBadPath: 'Path not usable',
-    devSyncedToast: 'Synced — the desktop half will hot-reload.',
     devRunCopy: 'Running copy',
     loading: 'Reading installed plugins…',
     loadFailed: message => `Could not read the installed list: ${message}`,
@@ -203,6 +190,11 @@ const MESSAGES = {
   },
   zh: {
     nav: '插件管理',
+    inspectRefMismatch: 'Ref 与检查到的提交不同；当前网关只能检查源的当前版本。',
+    devGitUnavailable: '桌面桥不开放 Git 元数据读取',
+    devStandalone: '独立桌面插件，没有单独的源副本',
+    devCopyIncomplete: '文件读取不完整，无法比较',
+    ambiguousActions: '多个 agent 条目使用同一名称，更新和卸载需要无歧义的名称。',
     title: '插件管理',
     statusLine: (dev, installed, bundled, updates) =>
       `${dev} 个开发中 · ${installed} 个另外装的 · ${bundled} 个内置 · ${updates} 个有更新`,
@@ -249,7 +241,6 @@ const MESSAGES = {
     filterDesktop: n => `有桌面半边 ${n}`,
     filterUpdates: n => `有更新 ${n}`,
     empty: '还没有装插件',
-    emptyHint: '可以从 Git 安装一个，或检查网关是否已连接。',
     emptyFiltered: '没有符合条件的插件',
     clearFilters: '清除筛选',
     sourceBundled: '内置',
@@ -263,8 +254,6 @@ const MESSAGES = {
     pinnedTip: '重新固定前不会跟随更新。',
     statusEnabled: '已启用',
     statusDisabled: '已停用',
-    desktopHas: '有',
-    desktopNone: '无',
     detailStatus: '状态',
     detailSourceSection: '来源与更新',
     detailPathSection: '路径',
@@ -276,9 +265,6 @@ const MESSAGES = {
     halfNo: '无',
     requiresVersionWarn: version => `需 ≥${version}（本机偏低）`,
     update: '更新',
-    updating: '更新中…',
-    expandRow: '展开详情',
-    collapseRow: '收起详情',
     toggleAria: name => `启用或停用 ${name}`,
     enableTip: '启用',
     disableTip: '停用',
@@ -297,13 +283,10 @@ const MESSAGES = {
     scanFindings: '发现',
     stillUpdate: '仍然更新',
     close: '关闭',
-    detailPath: '安装路径',
     copyPath: '复制路径',
     copied: '已复制',
     openDir: '打开目录',
     openDirFailed: '打不开这个目录',
-    keyLabel: 'Key',
-    versionLabel: '版本',
     pinnedLabel: '固定 SHA',
     upgradeLabel: '可升级',
     upgradeValue: (version, sha) => `目录版本 ${version || '—'} · 目标 ${sha || '—'}`,
@@ -317,25 +300,18 @@ const MESSAGES = {
     uninstalled: name => `${name} 已卸载，重启网关后完全生效`,
     removeDesktopDone: name => `${name} 的桌面半边已卸载`,
     removeFailed: message => `卸载失败：${message}`,
-    copyCommand: '复制命令',
     devMark: '标记为我开发的',
     devUnmark: '不算我开发的',
     devState: '开发态',
     devGitBranch: 'git',
-    devGitDirty: n => `${n} 处未提交`,
-    devGitAhead: (a, b) => `↑${a}↓${b}`,
-    devGitLast: '最后提交',
-    devNotGit: '非 git 仓库',
     devCopySynced: '已同步',
     devCopyPending: '待同步',
     devCopyNoSource: '源缺失',
     devCopyMissing: '运行副本不存在',
     devCopyClaimed: '已被 Hermes 认领（opt-in），侧边栏默认不显示',
-    syncToApp: '同步到运行副本',
     devReread: '重读',
     devLoading: '读取中…',
     devBadPath: '路径不可用',
-    devSyncedToast: '已同步，桌面端会自动热重载',
     devRunCopy: '运行副本',
     loading: '正在读取已安装插件…',
     loadFailed: message => `读不到已安装列表：${message}`,
@@ -343,6 +319,11 @@ const MESSAGES = {
   },
   'zh-hant': {
     nav: '外掛管理',
+    inspectRefMismatch: 'Ref 與檢查到的提交不同；目前閘道只能檢查來源的目前版本。',
+    devGitUnavailable: '桌面橋不開放 Git 中繼資料讀取',
+    devStandalone: '獨立桌面外掛，沒有單獨的來源副本',
+    devCopyIncomplete: '檔案讀取不完整，無法比較',
+    ambiguousActions: '多個 agent 項目使用相同名稱，更新與卸載需要無歧義的名稱。',
     title: '外掛管理',
     statusLine: (dev, installed, bundled, updates) =>
       `${dev} 個開發中 · ${installed} 個另外裝的 · ${bundled} 個內建 · ${updates} 個有更新`,
@@ -389,7 +370,6 @@ const MESSAGES = {
     filterDesktop: n => `有桌面半邊 ${n}`,
     filterUpdates: n => `有更新 ${n}`,
     empty: '還沒有安裝外掛',
-    emptyHint: '可以從 Git 安裝一個，或檢查閘道是否已連線。',
     emptyFiltered: '沒有符合條件的外掛',
     clearFilters: '清除篩選',
     sourceBundled: '內建',
@@ -403,8 +383,6 @@ const MESSAGES = {
     pinnedTip: '重新固定前不會跟隨更新。',
     statusEnabled: '已啟用',
     statusDisabled: '已停用',
-    desktopHas: '有',
-    desktopNone: '無',
     detailStatus: '狀態',
     detailSourceSection: '來源與更新',
     detailPathSection: '路徑',
@@ -416,9 +394,6 @@ const MESSAGES = {
     halfNo: '無',
     requiresVersionWarn: version => `需 ≥${version}（本機偏低）`,
     update: '更新',
-    updating: '更新中…',
-    expandRow: '展開詳情',
-    collapseRow: '收合詳情',
     toggleAria: name => `啟用或停用 ${name}`,
     enableTip: '啟用',
     disableTip: '停用',
@@ -437,13 +412,10 @@ const MESSAGES = {
     scanFindings: '發現',
     stillUpdate: '仍然更新',
     close: '關閉',
-    detailPath: '安裝路徑',
     copyPath: '複製路徑',
     copied: '已複製',
     openDir: '開啟目錄',
     openDirFailed: '無法開啟這個目錄',
-    keyLabel: 'Key',
-    versionLabel: '版本',
     pinnedLabel: '固定 SHA',
     upgradeLabel: '可升級',
     upgradeValue: (version, sha) => `目錄版本 ${version || '—'} · 目標 ${sha || '—'}`,
@@ -457,25 +429,18 @@ const MESSAGES = {
     uninstalled: name => `${name} 已卸載，重啟閘道後完全生效`,
     removeDesktopDone: name => `${name} 的桌面半邊已卸載`,
     removeFailed: message => `卸載失敗：${message}`,
-    copyCommand: '複製指令',
     devMark: '標記為我開發的',
     devUnmark: '不算我開發的',
     devState: '開發態',
     devGitBranch: 'git',
-    devGitDirty: n => `${n} 處未提交`,
-    devGitAhead: (a, b) => `↑${a}↓${b}`,
-    devGitLast: '最後提交',
-    devNotGit: '非 git 倉庫',
     devCopySynced: '已同步',
     devCopyPending: '待同步',
     devCopyNoSource: '來源缺失',
     devCopyMissing: '執行副本不存在',
     devCopyClaimed: '已被 Hermes 認領（opt-in），側邊欄預設不顯示',
-    syncToApp: '同步到執行副本',
     devReread: '重讀',
     devLoading: '讀取中…',
     devBadPath: '路徑不可用',
-    devSyncedToast: '已同步，桌面端會自動熱重載',
     devRunCopy: '執行副本',
     loading: '正在讀取已安裝外掛…',
     loadFailed: message => `讀不到已安裝清單：${message}`,
@@ -498,11 +463,25 @@ const SECTIONS_VERSION = 2
 let sections = { v: SECTIONS_VERSION, dev: true, installed: true, bundled: false }
 /** Last successful `plugins.manage list` — the gateway needs ~3 s for 73 plugins,
  *  so the page paints this immediately and refreshes behind it. */
-const ROWS_CACHE_KEY = 'rows.v2'
+const ROWS_CACHE_KEY = 'rows.v3'
+const ROWS_VERSION = 3
 /** Manual "this one is mine" corrections, by name. */
 const DEV_OVERRIDES_KEY = 'dev.overrides'
 let devOverrides = { on: [], off: [] }
 let rowsCache = { at: 0, plugins: [] }
+let listFlight = null
+
+/** Share the expensive request across simultaneous mounts/refreshes. */
+async function requestList(fresh = false) {
+  if (fresh && listFlight) {
+    try { await listFlight } catch {}
+  }
+  if (!listFlight) {
+    listFlight = Promise.resolve().then(() => host.request('plugins.manage', { action: 'list' }, 60000))
+      .finally(() => { listFlight = null })
+  }
+  return listFlight
+}
 
 function readStored(key) {
   try {
@@ -551,14 +530,16 @@ function hydrate() {
   writeStored(PREFS_KEY, prefs)
   const overrides = readStored(DEV_OVERRIDES_KEY)
   if (overrides && Array.isArray(overrides.on) && Array.isArray(overrides.off)) {
-    devOverrides = { on: overrides.on, off: overrides.off }
+    devOverrides = {
+      on: overrides.on.filter(name => typeof name === 'string'),
+      off: overrides.off.filter(name => typeof name === 'string')
+    }
   }
   const cached = readStored(ROWS_CACHE_KEY)
-  if (cached && Array.isArray(cached.plugins)) {
+  if (cached && cached.v === ROWS_VERSION && Array.isArray(cached.plugins)) {
     rowsCache = {
       at: Number(cached.at) || 0,
-      plugins: cached.plugins,
-      dev: Array.isArray(cached.dev) ? cached.dev : []
+      plugins: normalizeRows(cached.plugins)
     }
   }
 }
@@ -623,13 +604,65 @@ function sourceKeyOf(row) {
   return 'sourceLocal'
 }
 
-/**
- * React key for a row. `key` alone is not unique: the same package can be listed
- * from two sources (git install + catalog pin), and a duplicate key makes React
- * silently drop one row while the group count still counts it.
- */
+/** Canonical registry identity, shared by selection, errors and React keys. */
 function rowKeyOf(row) {
-  return `${row.key || `name:${row.name}`}|${row.source || ''}`
+  return JSON.stringify(row.key ? ['agent', row.key] : ['desktop', row.name])
+}
+
+function normalizeRows(rows) {
+  const unique = new Map()
+  for (const row of rows) {
+    if (!row || typeof row.name !== 'string' || !row.name.trim() ||
+        typeof row.key !== 'string' || !row.key || typeof row.source !== 'string') continue
+    const text = Object.fromEntries(['version', 'description', 'pinned_sha', 'catalog_version',
+      'catalog_sha', 'update_target', 'catalog_name'].map(key => [key, typeof row[key] === 'string' ? row[key] : '']))
+    unique.set(rowKeyOf(row), {
+      ...row,
+      ...text,
+      install_dir: typeof row.install_dir === 'string' ? row.install_dir : '',
+      status: typeof row.status === 'string' ? row.status : '',
+      has_desktop_half: row.has_desktop_half === true,
+      update_available: row.update_available === true,
+      portable: row.portable === true
+    })
+  }
+  return [...unique.values()]
+}
+
+/**
+ * Install provenance is not authorship, so this is a *default guess* the user can
+ * flip per row (`dev.overrides`). The guess: hand-placed desktop halves, local
+ * installs that ship a desktop page, and plain git checkouts that no catalog pinned
+ * (a pinned SHA means the catalog's index installed it). `.git/config` is not
+ * readable through the bridge, so a remote-based check is impossible here.
+ */
+function looksLikeOwnWork(row) {
+  if (row.source === 'desktop') return true
+  if (row.source === 'user' && row.has_desktop_half) return true
+  return row.source === 'git' && !row.pinned_sha
+}
+
+function detectDev(plugins) {
+  return new Set(plugins
+    .filter(row => row.source !== 'bundled' && !devOverrides.off.includes(row.name))
+    .filter(row => devOverrides.on.includes(row.name) || looksLikeOwnWork(row))
+    .map(row => row.name))
+}
+
+function canManageAgent(row, rows) {
+  return Boolean(row.key && row.source !== 'bundled' &&
+    rows.filter(other => other.key && other.name === row.name).length === 1)
+}
+
+function inspectedParams(inspection, identifier, ref, half) {
+  if (inspection.status !== 'done' || inspection.identifier !== identifier || inspection.ref !== ref ||
+      !inspection.data?.[half] || !REF_RE.test(inspection.data.sha || '')) return null
+  const sha = inspection.data.sha.toLowerCase()
+  // inspect has no ref support. Never imply that an arbitrary ref was reviewed.
+  if (ref && ref.toLowerCase() !== sha) return null
+  return half === 'desktop'
+    ? { action: 'install_desktop', identifier, ref: sha }
+    : { action: 'install', identifier, enable: true, ...(ref ? { ref: sha } : { inspected_sha: sha }) }
 }
 
 /** Label/value pair for the detail panel's two-column grid. */
@@ -644,27 +677,10 @@ function gridPair(label, value, key) {
 // dev state (git / running copy)
 // ---------------------------------------------------------------------------
 
-const SHELL_UNSAFE = /["&%^|<>]/
-const NAME_RE = /^[A-Za-z0-9._-]+$/
-
-/** Absolute path and none of the characters cmd.exe treats specially. */
-function isSafeShellPath(path) {
-  const value = String(path || '')
-  if (!value || SHELL_UNSAFE.test(value)) return false
-  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\') || value.startsWith('/')
-}
-
 function isSafeName(name) {
   const value = String(name || '')
-  return NAME_RE.test(value) && value !== '.' && value !== '..'
-}
-
-/** `desktopPluginsRoot()` returns `…\desktop-plugins`; take its parent. */
-function appRootOf(desktopPluginsRoot) {
-  const clean = String(desktopPluginsRoot || '').replace(/[\\/]+$/, '')
-  if (!clean) return ''
-  if (/[\\/]desktop-plugins$/i.test(clean)) return clean.replace(/[\\/]desktop-plugins$/i, '')
-  return clean
+  return Boolean(value && !value.startsWith('.') && !/[\\/:\0-\x1f]/.test(value) &&
+    !/[. ]$/.test(value) && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(value))
 }
 
 function joinPath(base, ...parts) {
@@ -695,6 +711,7 @@ function normalizeForCompare(text) {
 }
 
 function compareCopy(source, running) {
+  if (source.truncated || running.truncated) return { kind: 'error', error: '' }
   if (!source.ok) return { kind: 'noSource' }
   if (!running.ok) return { kind: 'missing' }
   const runningBytes = byteLength(running.text)
@@ -715,43 +732,13 @@ function formatBytes(value) {
   return `${(value / 1024 / 1024).toFixed(1)} MB`
 }
 
-function parseGitStatus(result) {
-  const stderr = String((result && result.stderr) || '')
-  const stdout = String((result && result.stdout) || '')
-  if (/not a git repository/i.test(stderr) || /not a git repository/i.test(stdout)) {
-    return { notGit: true }
-  }
-  if (result && typeof result.code === 'number' && result.code !== 0 && !stdout.trim()) {
-    return { notGit: true }
-  }
-  const [statusPart = '', logPart = ''] = stdout.split('@@SEP@@')
-  let branch = ''
-  let ahead = 0
-  let behind = 0
-  let dirty = 0
-  for (const line of statusPart.split(/\r?\n/)) {
-    if (line.startsWith('# branch.head ')) {
-      branch = line.slice('# branch.head '.length).trim()
-    } else if (line.startsWith('# branch.ab ')) {
-      const match = /\+(\d+)\s+-(\d+)/.exec(line)
-      if (match) {
-        ahead = Number(match[1])
-        behind = Number(match[2])
-      }
-    } else if (/^[12u?] /.test(line)) {
-      dirty += 1
-    }
-  }
-  return { notGit: false, branch, ahead, behind, dirty, last: logPart.trim() }
-}
-
 async function readMaybeText(path) {
   const desktop = bridge()
   if (!desktop || typeof desktop.readFileText !== 'function' || !path) return { ok: false }
   try {
     // hermes:readFileText answers `{ text, byteSize, truncated }` — treating it as
     // a bare string made every read look like a missing file ("源缺失").
-    const res = await desktop.readFileText(path)
+    const res = await bridgeCall(() => desktop.readFileText(path))
     if (typeof res === 'string') return { ok: true, text: res }
     if (res && typeof res.text === 'string') {
       return { ok: true, text: res.text, truncated: Boolean(res.truncated), byteSize: res.byteSize }
@@ -762,17 +749,16 @@ async function readMaybeText(path) {
   }
 }
 
-/** Branch + commit straight out of `.git` — no command execution needed. */
-async function readGitHead(dir) {
-  const head = await readMaybeText(joinPath(dir, '.git', 'HEAD'))
-  if (!head.ok) return null
-  const raw = head.text.trim()
-  const ref = /^ref:\s*(.+)$/.exec(raw)
-  if (!ref) return raw ? { branch: '', sha: raw.slice(0, 7) } : null
-  const refPath = ref[1]
-  const branch = refPath.startsWith('refs/heads/') ? refPath.slice('refs/heads/'.length) : refPath
-  const sha = await readMaybeText(joinPath(dir, '.git', refPath))
-  return { branch, sha: sha.ok ? sha.text.trim().slice(0, 7) : '' }
+async function bridgeCall(call) {
+  let timer
+  try {
+    return await Promise.race([
+      Promise.resolve().then(call),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Desktop bridge timed out')), 10000) })
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -790,14 +776,13 @@ function ManagerPage() {
   const [status, setStatus] = useState(() => (rowsCache.plugins.length ? 'ready' : 'loading'))
   const [loadError, setLoadError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
-  const [desktopDirs, setDesktopDirs] = useState(() => new Set())
-  /** Plugin names whose git remote belongs to the user's own GitHub account. */
-  const [devSet, setDevSet] = useState(() => new Set(rowsCache.dev || []))
+
+  const [desktopDirs, setDesktopDirs] = useState(() => new Map())
   const [appVersion, setAppVersion] = useState('')
   const [filter, setFilter] = useState(prefs.filter)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(() => ({ ...sections }))
-  const [selectedName, setSelectedName] = useState('')
+  const [selectedKey, setSelectedKey] = useState('')
   const [busyName, setBusyName] = useState('')
   const [rowError, setRowError] = useState(null)
   const [actionError, setActionError] = useState('')
@@ -813,7 +798,12 @@ function ManagerPage() {
   const [installingHalf, setInstallingHalf] = useState('')
   const [devCache, setDevCache] = useState({})
   const devCacheRef = useRef({})
-  const pickedRef = useRef(false)
+  const refreshFlight = useRef(null)
+  const mutationRef = useRef(false)
+  const inspectEpoch = useRef(0)
+  const devEpoch = useRef(0)
+  const [overrideVersion, setOverrideVersion] = useState(0)
+  const isMutating = Boolean(busyName || bulkUpdating || installingHalf)
 
   const setDev = useCallback((name, entry) => {
     const next = { ...devCacheRef.current, [name]: entry }
@@ -822,79 +812,66 @@ function ManagerPage() {
   }, [])
 
   const readDesktopDirs = useCallback(async () => {
+    const desktop = bridge()
+    if (!desktop || typeof desktop.desktopPluginsRoot !== 'function' || typeof desktop.readDir !== 'function') return null
     try {
-      const desktop = bridge()
-      if (!desktop || typeof desktop.desktopPluginsRoot !== 'function') return new Set()
-      if (typeof desktop.readDir !== 'function') return new Set()
-      const root = await desktop.desktopPluginsRoot()
-      if (!root) return new Set()
-      const res = await desktop.readDir(root)
-      const entries = res && Array.isArray(res.entries) ? res.entries : []
-      return new Set(entries.filter(entry => entry.isDirectory).map(entry => entry.name))
+      const root = await bridgeCall(() => desktop.desktopPluginsRoot())
+      if (!root) return null
+      const res = await bridgeCall(() => desktop.readDir(root))
+      if (!Array.isArray(res?.entries)) return null
+      const entries = await Promise.all(res.entries.filter(entry => entry?.isDirectory &&
+        typeof entry.name === 'string' && isSafeName(entry.name))
+        .map(async entry => {
+          const dir = joinPath(root, entry.name)
+          const marker = await readMaybeText(joinPath(dir, '.hermes-package.json'))
+          let owner = ''
+          try { owner = JSON.parse(marker.text || '{}').package || '' } catch {}
+          return [entry.name, { dir, owner, claimed: marker.ok }]
+        }))
+      return new Map(entries)
     } catch {
-      return new Set()
+      return null
     }
   }, [])
 
-  /**
-   * "Mine to develop" = a local hand-written plugin (no `.git`) or a checkout
-   * whose remote is the user's own GitHub account. A `.git` copied from someone
-   * else's repository is just an install. The backend only knows bundled vs
-   * not, so this split has to come from the plugin directory itself.
-   */
-  const detectDev = useCallback(async plugins => {
-    const names = []
-    for (const row of plugins) {
-      if (row.source === 'bundled') continue
-      if (devOverrides.off.includes(row.name)) continue
-      if (devOverrides.on.includes(row.name)) {
-        names.push(row.name)
-        continue
-      }
-      // `.git` cannot be read through the bridge (Electron blocks it as a
-      // sensitive path), so the split comes from how it was installed: anything
-      // git-sourced, hand-placed in the app dir, or installed locally *with* a
-      // desktop page is his own work. A plain agent-only package from someone
-      // else's repo (superpowers) stays in "installed".
-      // `git pinned@<sha>` / `catalog:…` mean the package came from a catalog, not
-      // from a checkout he owns; only a bare `git` (or a hand-placed desktop half)
-      // is his own work.
-      // A plain `git` checkout with no pinned sha is his own clone; a pinned one
-      // came from the catalog's index. Hand-placed desktop halves count too.
-      if (row.source === 'desktop' || (row.source === 'git' && !row.pinned_sha)) {
-        names.push(row.name)
-        continue
-      }
-      if (row.source === 'user' && row.has_desktop_half) names.push(row.name)
+  const refresh = useCallback(async (afterMutation = false) => {
+    // A mutation must not reuse a snapshot that started before it completed.
+    if (refreshFlight.current) {
+      await refreshFlight.current
+      if (afterMutation !== true) return
     }
-    names.sort()
-    setDevSet(new Set(names))
-    rowsCache = { ...rowsCache, dev: names }
-    writeStored(ROWS_CACHE_KEY, rowsCache)
-  }, [])
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      const res = await host.request('plugins.manage', { action: 'list' }, 60000)
-      if (!res || !Array.isArray(res.plugins)) throw new Error('list returned no plugins array')
-      setRows(res.plugins)
-      setLoadError('')
-      setStatus('ready')
-      // Stale-while-revalidate: next open paints these instead of the spinner.
-      rowsCache = { at: Date.now(), plugins: res.plugins, dev: rowsCache.dev || [] }
-      writeStored(ROWS_CACHE_KEY, rowsCache)
-      // detection runs from allRows (see effect below) so desktop-only rows count too
-    } catch (e) {
-      // A failed refresh keeps the last good rows on screen — wiping them turns a
-      // network hiccup into "I have no plugins".
-      if (!rowsCache.plugins.length) setRows([])
-      setLoadError(errorMessage(e))
-      setStatus(rowsCache.plugins.length ? 'ready' : 'error')
+    const pending = (async () => {
+      setRefreshing(true)
+      try {
+        const [res] = await Promise.all([requestList(afterMutation === true), readDesktopDirs().then(dirs => {
+          if (dirs) setDesktopDirs(dirs)
+        })])
+        if (!res || !Array.isArray(res.plugins)) throw new Error('list returned no plugins array')
+        const plugins = normalizeRows(res.plugins)
+        if (res.plugins.some(row => !row || typeof row.key !== 'string' || !row.key ||
+            typeof row.name !== 'string' || !row.name.trim() || typeof row.source !== 'string')) {
+          throw new Error('list returned invalid plugin rows')
+        }
+        setRows(plugins)
+        setLoadError('')
+        setStatus('ready')
+        rowsCache = { v: ROWS_VERSION, at: Date.now(), plugins }
+        writeStored(ROWS_CACHE_KEY, rowsCache)
+        devEpoch.current += 1
+        devCacheRef.current = {}
+        setDevCache({})
+      } catch (e) {
+        setLoadError(errorMessage(e))
+        setStatus(rowsCache.plugins.length ? 'ready' : 'error')
+      } finally {
+        setRefreshing(false)
+      }
+    })()
+    refreshFlight.current = pending
+    try { await pending } finally {
+      if (refreshFlight.current === pending) refreshFlight.current = null
     }
-    setDesktopDirs(await readDesktopDirs())
-    setRefreshing(false)
-  }, [detectDev, readDesktopDirs])
+  }, [readDesktopDirs])
 
   useEffect(() => {
     void refresh()
@@ -908,7 +885,8 @@ function ManagerPage() {
 
   const loadDev = useCallback(
     async (row, force = false) => {
-      const name = row.name
+      const name = rowKeyOf(row)
+      const epoch = devEpoch.current
       if (!force && devCacheRef.current[name]) return
       setDev(name, { status: 'loading' })
       try {
@@ -916,36 +894,29 @@ function ManagerPage() {
         let root = ''
         if (desktop && typeof desktop.desktopPluginsRoot === 'function') {
           try {
-            root = await desktop.desktopPluginsRoot()
+            root = await bridgeCall(() => desktop.desktopPluginsRoot())
           } catch {
             root = ''
           }
         }
-        const appRoot = appRootOf(root)
-        const nameOk = isSafeName(name)
+        const nameOk = isSafeName(row.desktop_name || row.name)
         const dir = String(row.install_dir || '')
-        const targetDir = appRoot && nameOk ? joinPath(appRoot, 'desktop-plugins', name) : ''
-        const sourcePath = dir ? joinPath(dir, 'desktop', 'plugin.js') : ''
+        const targetDir = root && nameOk ? joinPath(root, row.desktop_name || row.name) : ''
+        const sourcePath = dir && !row.desktop_only ? joinPath(dir, 'desktop', 'plugin.js') : ''
         const runningPath = targetDir ? joinPath(targetDir, 'plugin.js') : ''
         const packagePath = targetDir ? joinPath(targetDir, '.hermes-package.json') : ''
-        const dirOk = isSafeShellPath(dir)
-
-        const [head, source, running, pkg] = await Promise.all([
-          dir ? readGitHead(dir).catch(() => null) : Promise.resolve(null),
+        const [source, rootSource, running, pkg] = await Promise.all([
           readMaybeText(sourcePath),
+          dir && !row.desktop_only ? readMaybeText(joinPath(dir, 'plugin.js')) : Promise.resolve({ ok: false }),
           readMaybeText(runningPath),
           readMaybeText(packagePath)
         ])
-
-        // Dirty/ahead counts would need a command runner, which a desktop plugin
-        // does not have: branch and commit come from `.git`, the rest of the dev
-        // picture from plain file reads.
-        const git = !dirOk ? { badPath: true } : head || { notGit: true }
-
-        const copy = runningPath ? compareCopy(source, running) : { kind: 'error', error: t('devBadPath') }
-        setDev(name, { status: 'ready', git, copy, claimed: Boolean(pkg.ok) })
+        const copy = row.desktop_only ? { kind: 'standalone' }
+          : runningPath ? compareCopy(source.ok ? source : rootSource, running)
+          : { kind: 'error', error: t('devBadPath') }
+        if (epoch === devEpoch.current) setDev(name, { status: 'ready', copy, claimed: Boolean(pkg.ok) })
       } catch (error) {
-        setDev(name, { status: 'error', error: errorMessage(error) })
+        if (epoch === devEpoch.current) setDev(name, { status: 'error', error: errorMessage(error) })
       }
     },
     [setDev, t]
@@ -955,7 +926,7 @@ function ManagerPage() {
     let alive = true
     const desktop = bridge()
     if (!desktop || typeof desktop.getVersion !== 'function') return () => {}
-    Promise.resolve(desktop.getVersion())
+    bridgeCall(() => desktop.getVersion())
       .then(info => {
         if (alive && info && typeof info.appVersion === 'string') setAppVersion(info.appVersion)
       })
@@ -972,59 +943,41 @@ function ManagerPage() {
     writeStored(PREFS_KEY, prefs)
   }, [filter])
 
-  /** Backend rows plus desktop halves that have no agent row at all. */
+  /** Pair desktop folders by package marker; aliases alone do not prove ownership. */
   const allRows = useMemo(() => {
     const seen = new Set()
-    const merged = rows.map(row => {
-      const leaf = String(row.key || '').split('/').pop()
-      if (row.name) seen.add(row.name)
-      if (leaf) seen.add(leaf)
-      if (row.catalog_name) seen.add(row.catalog_name)
-      const found =
-        row.has_desktop_half ||
-        Boolean(row.name && desktopDirs.has(row.name)) ||
-        Boolean(leaf && desktopDirs.has(leaf)) ||
-        Boolean(row.catalog_name && desktopDirs.has(row.catalog_name))
-      return found && !row.has_desktop_half ? { ...row, has_desktop_half: true } : row
-    })
-    for (const name of desktopDirs) {
-      if (seen.has(name)) continue
-      merged.push({
-        name,
-        key: '',
-        version: '',
-        description: '',
-        source: 'desktop',
-        status: 'not enabled',
-        portable: false,
-        has_desktop_half: true,
-        install_dir: '',
-        desktop_only: true
-      })
+    const nameCounts = new Map()
+    for (const row of rows) {
+      if (row.source !== 'bundled') nameCounts.set(row.name, (nameCounts.get(row.name) || 0) + 1)
     }
-    return merged.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    const merged = rows.map(row => {
+      const matches = [...desktopDirs].filter(([name, info]) =>
+        row.source !== 'bundled' && nameCounts.get(row.name) === 1 &&
+        (info.owner ? info.owner === row.name : name === row.name))
+      const match = matches.length === 1 ? matches[0] : null
+      if (match) seen.add(match[0])
+      return { ...row, desktop_name: match?.[0] || '', desktop_claimed: Boolean(match?.[1].claimed),
+        has_desktop_half: row.has_desktop_half || Boolean(match) }
+    })
+    for (const [name, info] of desktopDirs) {
+      if (seen.has(name)) continue
+      merged.push({ name, key: '', version: '', description: '', source: 'desktop',
+        status: '', portable: false, has_desktop_half: true, install_dir: info.dir,
+        desktop_name: name, desktop_claimed: info.claimed, desktop_only: true })
+    }
+    return merged.sort((a, b) => a.name.localeCompare(b.name) || rowKeyOf(a).localeCompare(rowKeyOf(b)))
   }, [rows, desktopDirs])
 
-  /** One-click correction for the heuristic above. */
+  const devSet = useMemo(() => detectDev(allRows), [allRows, overrideVersion])
   const toggleDev = useCallback(row => {
     const name = row.name
-    const isDev = devSet.has(name)
-    devOverrides = isDev
+    devOverrides = devSet.has(name)
       ? { on: devOverrides.on.filter(x => x !== name), off: [...new Set([...devOverrides.off, name])] }
       : { on: [...new Set([...devOverrides.on, name])], off: devOverrides.off.filter(x => x !== name) }
     writeStored(DEV_OVERRIDES_KEY, devOverrides)
+    setOverrideVersion(value => value + 1)
     haptic('tap')
-    void detectDev(allRows)
-  }, [allRows, devSet, detectDev])
-
-
-  /** Recompute dev membership whenever the merged row list changes. */
-  useEffect(() => {
-    if (!allRows.length) return
-    void detectDev(allRows)
-    // detectDev is stable ([] deps); allRows identity changes on refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allRows])
+  }, [devSet])
 
   /** Three sections: my own checkouts, everything else I installed, then built-ins. */
   const mineRows = useMemo(() => allRows.filter(row => row.source !== 'bundled'), [allRows])
@@ -1073,14 +1026,14 @@ function ManagerPage() {
     })
   }, [mineRows, filter, query])
 
-  const filteredDev = filteredMine.filter(row => devSet.has(row.name))
-  const filteredInstalled = filteredMine.filter(row => !devSet.has(row.name))
+  const filteredDev = useMemo(() => filteredMine.filter(row => devSet.has(row.name)), [filteredMine, devSet])
+  const filteredInstalled = useMemo(() => filteredMine.filter(row => !devSet.has(row.name)), [filteredMine, devSet])
 
   const filtering = filter !== 'all' || Boolean(query.trim())
 
   const currentRow = useMemo(
-    () => allRows.find(row => row.name === selectedName) || null,
-    [allRows, selectedName]
+    () => allRows.find(row => rowKeyOf(row) === selectedKey) || null,
+    [allRows, selectedKey]
   )
 
   /** The left list decides what can be selected; built-ins count even while folded. */
@@ -1090,27 +1043,15 @@ function ManagerPage() {
   )
 
   useEffect(() => {
-    const fallback = filteredDev[0] || filteredInstalled[0] || bundledRows[0] || null
-    if (!fallback) {
-      if (selectedName) setSelectedName('')
-      return
-    }
-    const exists = Boolean(selectedName) && selectableRows.some(row => row.name === selectedName)
-    // Before the user picks anything, keep the default on the first row (the
-    // first dev plugin) even when the dev scan finishes after the list paints.
-    if (!pickedRef.current) {
-      if (selectedName !== fallback.name) setSelectedName(fallback.name)
-      return
-    }
-    if (!exists) setSelectedName(fallback.name)
-  }, [bundledRows, filteredDev, filteredInstalled, selectedName, selectableRows])
+    const fallback = selectableRows[0]
+    if (!selectableRows.some(row => rowKeyOf(row) === selectedKey)) setSelectedKey(fallback ? rowKeyOf(fallback) : '')
+  }, [selectedKey, selectableRows])
 
-  /** Only the selected row pays for git; everything else stays unread. */
   useEffect(() => {
-    if (!currentRow || !currentRow.has_desktop_half || !currentRow.install_dir) return
-    if (devCacheRef.current[currentRow.name]) return
+    if (!currentRow?.has_desktop_half) return
+    if (devCacheRef.current[rowKeyOf(currentRow)]) return
     void loadDev(currentRow)
-  }, [currentRow, loadDev])
+  }, [currentRow, loadDev, devCache])
 
   const versionWarn = versionParts(appVersion) && !satisfies(`>=${MIN_HERMES}`, appVersion)
 
@@ -1127,7 +1068,7 @@ function ManagerPage() {
         if (pending && typeof pending.then === 'function') {
           pending.then(ok => {
             if (ok === false) notify('error', t('openDirFailed'))
-          })
+          }).catch(() => notify('error', t('openDirFailed')))
         }
       } catch {
         notify('error', t('openDirFailed'))
@@ -1138,9 +1079,10 @@ function ManagerPage() {
 
   const toggleRow = useCallback(
     async (row, enable) => {
-      if (!row.key) return
+      if (!row.key || mutationRef.current) return
+      mutationRef.current = true
       haptic('tap')
-      setBusyName(row.name)
+      setBusyName(rowKeyOf(row))
       try {
         const res = await host.request(
           'plugins.manage',
@@ -1149,10 +1091,11 @@ function ManagerPage() {
         )
         if (!res || !res.ok) throw new Error((res && res.error) || 'toggle rejected')
         notify('success', enable ? t('enabledOk', row.name) : t('disabledOk', row.name))
-        await refresh()
+        await refresh(true)
       } catch (e) {
         notify('error', t('toggleFailed', errorMessage(e)))
       } finally {
+        mutationRef.current = false
         setBusyName('')
       }
     },
@@ -1161,24 +1104,28 @@ function ManagerPage() {
 
   const runUpdate = useCallback(
     async (row, options = {}) => {
-      setBusyName(row.name)
+      if (!canManageAgent(row, allRows) || mutationRef.current) return
+      mutationRef.current = true
+      setBusyName(rowKeyOf(row))
       setRowError(null)
+      setConsent(null)
+      setScan(null)
       try {
         const res = await host.request(
           'plugins.manage',
           { action: 'update', name: row.name, ...options },
           300000
         )
-        if (res && res.consent_required && !options.accept_capabilities) {
-          setConsent({ row, lines: Array.isArray(res.delta_lines) ? res.delta_lines : [] })
+        if (res && res.consent_required) {
+          setConsent({ row, options, lines: Array.isArray(res.delta_lines) ? res.delta_lines : [] })
           return
         }
-        if (res && res.scan_blocked && !options.force) {
+        if (res && res.scan_blocked) {
           setScan({
             row,
             verdict: res.scan_verdict || '',
             findings: Array.isArray(res.scan_findings) ? res.scan_findings : [],
-            accept: Boolean(options.accept_capabilities)
+            options
           })
           return
         }
@@ -1186,41 +1133,51 @@ function ManagerPage() {
         notify('success', res.unchanged ? t('updateUnchanged') : t('updatedOk', row.name))
         setConsent(null)
         setScan(null)
-        await refresh()
+        await refresh(true)
       } catch (e) {
         const message = t('updateFailed', errorMessage(e))
-        setRowError({ name: row.name, message })
+        setRowError({ key: rowKeyOf(row), message })
         notify('error', message)
       } finally {
+        mutationRef.current = false
         setBusyName('')
       }
     },
-    [notify, refresh, t]
+    [allRows, notify, refresh, t]
   )
 
   const runUpdateAll = useCallback(async () => {
+    if (mutationRef.current) return
+    mutationRef.current = true
     haptic('tap')
     setBulkUpdating(true)
     setActionError('')
     setBulkResult(null)
     try {
       const res = await host.request('plugins.manage', { action: 'update_all' }, 900000)
-      const results = res && Array.isArray(res.results) ? res.results : []
-      const skipped = res && Array.isArray(res.skipped) ? res.skipped : []
+      if (!res || res.ok === false || !Array.isArray(res.results) || !Array.isArray(res.skipped) ||
+          res.results.some(row => !row || typeof row.name !== 'string' || !['updated', 'current', 'failed', 'needs_review'].includes(row.status)) ||
+          res.skipped.some(row => !row || typeof row.name !== 'string')) {
+        throw new Error(res?.error || 'update_all returned invalid results')
+      }
+      const { results, skipped } = res
       setBulkResult({ results, skipped })
       const count = wanted => results.filter(r => r.status === wanted).length
       notify('success', t('updateAllDone', count('updated'), count('failed'), count('needs_review')))
-      await refresh()
+      await refresh(true)
     } catch (e) {
       const message = t('updateAllFailed', errorMessage(e))
       setActionError(message)
       notify('error', message)
     } finally {
+      mutationRef.current = false
       setBulkUpdating(false)
     }
   }, [notify, refresh, t])
 
   const runInspect = useCallback(async () => {
+    if (mutationRef.current) return
+    const epoch = ++inspectEpoch.current
     const identifier = installRepo.trim()
     const ref = installRef.trim()
     setActionError('')
@@ -1229,9 +1186,13 @@ function ManagerPage() {
     setInspect({ status: 'checking' })
     try {
       const res = await host.request('plugins.manage', { action: 'inspect', identifier }, 600000)
+      if (epoch !== inspectEpoch.current) return
       if (!res || !res.ok) throw new Error((res && res.error) || 'inspect rejected')
-      setInspect({ status: 'done', data: res })
+      if (!REF_RE.test(res.sha || '')) throw new Error('inspect returned no valid commit SHA')
+      if (ref && ref.toLowerCase() !== res.sha.toLowerCase()) throw new Error(t('inspectRefMismatch'))
+      setInspect({ status: 'done', identifier, ref, data: res })
     } catch (e) {
+      if (epoch !== inspectEpoch.current) return
       setInspect({ status: 'error', error: t('inspectFailed', errorMessage(e)) })
     }
   }, [installRef, installRepo, t])
@@ -1240,19 +1201,12 @@ function ManagerPage() {
     async half => {
       const identifier = installRepo.trim()
       const ref = installRef.trim()
-      if (!identifier) return setInspect({ status: 'error', error: t('repoRequired') })
-      if (ref && !REF_RE.test(ref)) return setInspect({ status: 'error', error: t('invalidRef') })
+      const params = inspectedParams(inspect, identifier, ref, half)
+      if (mutationRef.current || !params) return
+      mutationRef.current = true
       setInstallingHalf(half)
       setActionError('')
       try {
-        const params =
-          half === 'desktop'
-            ? { action: 'install_desktop', identifier }
-            : { action: 'install', identifier, enable: true }
-        if (ref) params.ref = ref
-        if (half === 'agent' && !ref && inspect.status === 'done' && inspect.data?.sha) {
-          params.inspected_sha = inspect.data.sha
-        }
         const res = await host.request('plugins.manage', params, 900000)
         if (!res || !res.ok) {
           throw new Error([(res && res.error) || 'install rejected', ...extraDetails(res, t)].join(' · '))
@@ -1262,7 +1216,7 @@ function ManagerPage() {
         setInstallRepo('')
         setInstallRef('')
         setInspect({ status: 'idle' })
-        await refresh()
+        await refresh(true)
       } catch (e) {
         const message = t(
           'installFailed',
@@ -1271,6 +1225,7 @@ function ManagerPage() {
         setInspect({ status: 'error', error: message })
         notify('error', message)
       } finally {
+        mutationRef.current = false
         setInstallingHalf('')
       }
     },
@@ -1279,13 +1234,15 @@ function ManagerPage() {
 
   const doRemove = useCallback(async () => {
     const target = pendingRemove && pendingRemove.row
-    if (!target) return
+    if (!target || mutationRef.current) return
     const desktop = pendingRemove.mode === 'remove_desktop'
-    setBusyName(target.name)
+    if (desktop ? !target.desktop_name || target.desktop_claimed : !canManageAgent(target, allRows)) return
+    mutationRef.current = true
+    setBusyName(rowKeyOf(target))
     setActionError('')
     try {
       const params = desktop
-        ? { action: 'remove_desktop', name: target.name }
+        ? { action: 'remove_desktop', name: target.desktop_name }
         : { action: 'remove', name: target.name }
       const res = await host.request('plugins.manage', params, 300000)
       if (!res || !res.ok) throw new Error((res && res.error) || 'remove rejected')
@@ -1294,15 +1251,16 @@ function ManagerPage() {
         desktop ? t('removeDesktopDone', target.name) : t('uninstalled', target.name)
       )
       setPendingRemove(null)
-      await refresh()
+      await refresh(true)
     } catch (e) {
       const message = t('removeFailed', errorMessage(e))
       notify('error', message)
       throw new Error(message)
     } finally {
+      mutationRef.current = false
       setBusyName('')
     }
-  }, [notify, pendingRemove, refresh, t])
+  }, [allRows, notify, pendingRemove, refresh, t])
 
   const chip = (id, label) =>
     jsx(
@@ -1368,7 +1326,7 @@ function ManagerPage() {
           size: 'xs',
           variant,
           type: 'button',
-          disabled: Boolean(installingHalf),
+          disabled: isMutating,
           onClick: () => installHalf(half),
           children:
             installingHalf === half
@@ -1422,52 +1380,12 @@ function ManagerPage() {
   }
 
   const devSection = row => {
-    const state = devCache[row.name]
+    const state = devCache[rowKeyOf(row)]
     const loading = !state || state.status === 'loading'
     const ready = Boolean(state && state.status === 'ready')
     const failed = Boolean(state && state.status === 'error')
-    const git = (state && state.git) || {}
+    const gitNode = jsx('span', { className: MUTED, children: t('devGitUnavailable') })
     const copy = (state && state.copy) || {}
-
-    let gitNode
-    if (loading) {
-      gitNode = jsxs('span', {
-        className: `inline-flex items-center gap-1 ${MUTED}`,
-        children: [jsx(GlyphSpinner, {}, 'spinner'), jsx('span', { children: t('devLoading') }, 'text')]
-      })
-    } else if (failed) {
-      gitNode = jsx('span', { className: DANGER, children: state.error }, 'error')
-    } else if (git.badPath) {
-      gitNode = jsx('span', { className: DANGER, children: t('devBadPath') }, 'bad-path')
-    } else if (git.error) {
-      gitNode = jsx('span', { className: DANGER, children: git.error }, 'git-error')
-    } else if (git.notGit) {
-      gitNode = jsx('span', { className: MUTED, children: t('devNotGit') }, 'not-git')
-    } else if (!git.branch && !git.dirty && !git.ahead && !git.behind && !git.last) {
-      gitNode = jsx('span', { className: MUTED, children: '—' }, 'empty-git')
-    } else {
-      const parts = []
-      const sep = () => {
-        if (parts.length) parts.push(jsx('span', { className: MUTED, children: ' · ' }, `sep-${parts.length}`))
-      }
-      if (git.branch) {
-        sep()
-        parts.push(jsx('span', { children: git.branch }, `branch-${parts.length}`))
-      }
-      if (git.dirty) {
-        sep()
-        parts.push(jsx('span', { children: t('devGitDirty', git.dirty) }, `dirty-${parts.length}`))
-      }
-      if (git.ahead || git.behind) {
-        sep()
-        parts.push(jsx('span', { children: t('devGitAhead', git.ahead || 0, git.behind || 0) }, `ab-${parts.length}`))
-      }
-      if (git.last) {
-        sep()
-        parts.push(jsx('span', { title: t('devGitLast'), children: git.last }, `last-${parts.length}`))
-      }
-      gitNode = jsxs('span', { className: 'flex min-w-0 flex-wrap items-center', children: parts }, 'git')
-    }
 
     let copyNode
     if (loading) {
@@ -1480,7 +1398,9 @@ function ManagerPage() {
     } else {
       let copyText = ''
       let copyDanger = false
-      if (copy.kind === 'synced') {
+      if (copy.kind === 'standalone') {
+        copyText = t('devStandalone')
+      } else if (copy.kind === 'synced') {
         copyText = [t('devCopySynced'), formatBytes(copy.bytes)].filter(Boolean).join(' · ')
       } else if (copy.kind === 'pending') {
         copyDanger = true
@@ -1497,7 +1417,7 @@ function ManagerPage() {
         copyText = t('devCopyMissing')
       } else {
         copyDanger = true
-        copyText = copy.error || t('devBadPath')
+        copyText = copy.error || t('devCopyIncomplete')
       }
       copyNode = jsx('span', {
         className: cn('min-w-0 break-words', copyDanger && DANGER),
@@ -1544,18 +1464,18 @@ function ManagerPage() {
   }
 
   const renderListRow = row => {
-    const selected = row.name === selectedName
+    const selected = rowKeyOf(row) === selectedKey
     const enabled = row.status === 'enabled'
-    const busy = busyName === row.name
+    const busy = busyName === rowKeyOf(row)
     return jsxs(
       'button',
       {
         type: 'button',
-        title: row.name,
+        title: row.key ? `${row.name} · ${row.key}` : row.name,
+        'aria-pressed': selected,
         onClick: () => {
           haptic('tap')
-          pickedRef.current = true
-          setSelectedName(row.name)
+          setSelectedKey(rowKeyOf(row))
         },
         className: cn(
           'mx-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors',
@@ -1619,7 +1539,7 @@ function ManagerPage() {
   const renderDetail = () => {
     const row = currentRow
     if (!row) return null
-    const busy = busyName === row.name
+    const busy = isMutating
     const enabled = row.status === 'enabled'
     const sourceKey = sourceKeyOf(row)
 
@@ -1760,21 +1680,21 @@ function ManagerPage() {
             'dev-toggle'
           )
         : null,
-      row.update_available
+      row.update_available && canManageAgent(row, allRows)
         ? jsx(
             Button,
             {
               size: 'sm',
               variant: 'secondary',
               type: 'button',
-              disabled: busy,
+              disabled: busy || Boolean(consent || scan),
               onClick: () => runUpdate(row),
               children: t('update')
             },
             'update'
           )
         : null,
-      row.key
+      canManageAgent(row, allRows)
         ? jsx(
             Button,
             {
@@ -1788,7 +1708,7 @@ function ManagerPage() {
             'uninstall'
           )
         : null,
-      row.has_desktop_half
+      row.desktop_name && !row.desktop_claimed
         ? jsx(
             Button,
             {
@@ -1801,16 +1721,7 @@ function ManagerPage() {
             },
             'uninstall-desktop'
           )
-        : null,
-      jsx(
-        CopyButton,
-        {
-          appearance: 'inline',
-          text: `hermes plugins remove ${row.name}`,
-          label: t('copyCommand')
-        },
-        'copy-command'
-      )
+        : null
     ]
 
     return jsxs(
@@ -1859,6 +1770,7 @@ function ManagerPage() {
                       label: enabled ? t('disableTip') : t('enableTip'),
                       children: jsx(Switch, {
                         checked: enabled,
+                        disabled: busy,
                         size: 'xs',
                         style: enabled ? { backgroundColor: 'var(--ui-accent, #7c5cff)' } : undefined,
                         'aria-label': t('toggleAria', row.name),
@@ -1893,7 +1805,7 @@ function ManagerPage() {
               children: sourceCells
             }, 'source-grid')
           ),
-          row.has_desktop_half && row.install_dir
+          row.has_desktop_half
             ? detailSection(t('devState'), devSection(row))
             : null,
           detailSection(t('detailPathSection'), pathNode),
@@ -1902,7 +1814,10 @@ function ManagerPage() {
             jsxs('div', {
               className: 'flex flex-col gap-2',
               children: [
-                rowError && rowError.name === row.name
+                row.key && row.source !== 'bundled' && !canManageAgent(row, allRows)
+                  ? jsx('div', { className: cn(CAPTION, MUTED), children: t('ambiguousActions') }, 'ambiguous-actions')
+                  : null,
+                rowError && rowError.key === rowKeyOf(row)
                   ? jsx('div', { className: ERROR_BAR, children: rowError.message }, 'row-error')
                   : null,
                 jsx('div', {
@@ -2080,10 +1995,11 @@ function ManagerPage() {
 
   return jsxs('div', {
     className: 'flex h-full min-h-0 flex-col',
+    'data-cn-market': '',
     children: [
       jsxs('div', {
         className:
-          'flex min-w-0 items-center justify-between gap-3 border-b ' +
+          'flex min-w-0 flex-wrap items-center justify-between gap-3 border-b ' +
           'border-(--ui-stroke-tertiary) px-4 py-3',
         children: [
           jsxs('div', {
@@ -2118,7 +2034,7 @@ function ManagerPage() {
                   size: 'sm',
                   variant: 'secondary',
                   type: 'button',
-                  disabled: bulkUpdating || allUpdates === 0,
+                  disabled: isMutating || Boolean(consent || scan) || allUpdates === 0,
                   onClick: runUpdateAll,
                   children: bulkUpdating
                     ? jsxs('span', {
@@ -2138,8 +2054,10 @@ function ManagerPage() {
                   size: 'sm',
                   variant: installOpen ? 'secondary' : 'outline',
                   type: 'button',
+                  disabled: isMutating,
                   onClick: () => {
                     haptic('tap')
+                    inspectEpoch.current += 1
                     setInstallOpen(open => !open)
                     setInspect({ status: 'idle' })
                     setActionError('')
@@ -2172,11 +2090,17 @@ function ManagerPage() {
       }),
       jsxs('div', {
         className: 'flex min-h-0 flex-1',
+        'data-cn-market-layout': '',
+        style: { flexDirection: 'row' },
         children: [
           jsxs('div', {
             className:
-              'flex min-h-0 w-[19rem] shrink-0 flex-col border-r ' +
+              'flex min-h-0 shrink-0 flex-col border-r ' +
               'border-(--ui-stroke-tertiary)',
+            // No breakpoint: a percentage cap keeps the pane usable in a narrow
+            // window without needing CSS the host does not compile.
+            style: { width: '20rem', maxWidth: '38%', minWidth: '11rem' },
+            'data-cn-market-list': '',
             children: [
               jsxs('div', {
                 className:
@@ -2220,6 +2144,8 @@ function ManagerPage() {
           }),
           jsxs('div', {
             className: 'min-w-0 flex-1 overflow-y-auto px-5 py-4',
+            'data-cn-market-detail': '',
+            style: { minWidth: 0 },
             children: [
               loadError && allRows.length
                 ? jsx('div', { className: cn(ERROR_BAR, 'mb-3'), children: t('loadFailed', loadError) }, 'load-error')
@@ -2241,7 +2167,12 @@ function ManagerPage() {
                               jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRepo') }, 'label'),
                               jsx('input', {
                                 value: installRepo,
-                                onChange: event => setInstallRepo(event.target.value),
+                                disabled: isMutating,
+                                onChange: event => {
+                                  inspectEpoch.current += 1
+                                  setInstallRepo(event.target.value)
+                                  setInspect({ status: 'idle' })
+                                },
                                 placeholder: t('gitRepoPlaceholder'),
                                 'aria-label': t('gitRepo'),
                                 className: cn(INPUT_CLASS, 'w-full')
@@ -2249,12 +2180,18 @@ function ManagerPage() {
                             ]
                           }, 'repo'),
                           jsxs('label', {
-                            className: 'flex w-64 flex-col gap-1',
+                            className: 'flex min-w-0 flex-col gap-1',
+                            style: { width: 'min(16rem, 100%)' },
                             children: [
                               jsx('span', { className: cn(CAPTION, MUTED), children: t('gitRef') }, 'label'),
                               jsx('input', {
                                 value: installRef,
-                                onChange: event => setInstallRef(event.target.value),
+                                disabled: isMutating,
+                                onChange: event => {
+                                  inspectEpoch.current += 1
+                                  setInstallRef(event.target.value)
+                                  setInspect({ status: 'idle' })
+                                },
                                 placeholder: t('gitRefPlaceholder'),
                                 'aria-label': t('gitRef'),
                                 spellCheck: false,
@@ -2268,7 +2205,7 @@ function ManagerPage() {
                               size: 'xs',
                               variant: 'outline',
                               type: 'button',
-                              disabled: inspect.status === 'checking',
+                              disabled: isMutating || inspect.status === 'checking',
                               onClick: runInspect,
                               children: t('check')
                             },
@@ -2311,13 +2248,13 @@ function ManagerPage() {
                                   size: 'xs',
                                   variant: 'destructive',
                                   type: 'button',
-                                  disabled: busyName === scan.row.name,
+                                  disabled: isMutating,
                                   onClick: () => {
                                     const target = scan
                                     setScan(null)
                                     void runUpdate(target.row, {
-                                      force: true,
-                                      ...(target.accept ? { accept_capabilities: true } : {})
+                                      ...target.options,
+                                      force: true
                                     })
                                   },
                                   children: t('stillUpdate')
@@ -2327,7 +2264,7 @@ function ManagerPage() {
                             : null,
                           jsx(
                             Button,
-                            { size: 'xs', variant: 'ghost', type: 'button', onClick: () => setScan(null), children: t('close') },
+                            { size: 'xs', variant: 'ghost', type: 'button', disabled: isMutating, onClick: () => setScan(null), children: t('close') },
                             'close'
                           )
                         ]
@@ -2426,7 +2363,7 @@ function ManagerPage() {
       }),
       jsx(ConfirmDialog, {
         open: Boolean(pendingRemove),
-        onClose: () => setPendingRemove(null),
+        onClose: () => { if (!mutationRef.current) setPendingRemove(null) },
         onConfirm: doRemove,
         title: pendingTarget
           ? pendingDesktop
@@ -2448,7 +2385,7 @@ function ManagerPage() {
           const target = consent
           if (!target) return
           setConsent(null)
-          await runUpdate(target.row, { accept_capabilities: true })
+          await runUpdate(target.row, { ...target.options, accept_capabilities: true })
         },
         title: consent ? t('consentTitle', consent.row.name) : '',
         description: consent

@@ -1,5 +1,5 @@
 name: cn-plugins-market
-version: "2.4.1"
+version: "2.5.0"
 description: >-
   Manage the plugins installed on this machine inside the Desktop app. A left
   list (in-development, other installs, built-ins folded) with search and
@@ -7,12 +7,15 @@ description: >-
   enable/disable switch, per-plugin and bulk updates (including the
   capability-consent and security-scan review steps), uninstall for the agent
   half and for standalone desktop halves, installing from a Git repository after
-  a read-only inspect, and a lazily loaded dev block (git state, source/running-copy
-  diff, opt-in claim warning). No remote catalog, no translation, no ranking.
+  a read-only inspect, and a lazily loaded dev block (source/running-copy
+  diff and opt-in claim warning; Git metadata is unavailable through the desktop
+  bridge). Development grouping uses explicit manual marks. No remote catalog,
+  no translation, no ranking.
   在 Hermes 桌面端管理本机已安装的插件：左侧分组列表（开发中 / 另外安装的 / 内置，内置默认折叠）
   带搜索与筛选，右侧详情显示状态、来源、路径并提供启用/停用开关；支持单个与全部更新
   （含能力变更确认和扫描拦截的处理）、卸载 agent 半边或独立桌面半边、从 Git 仓库先 inspect 再安装，
-  以及懒加载的「开发态」区块（git 状态、源与运行副本差异、opt-in 认领警告）。
+  以及懒加载的「开发态」区块（源与运行副本差异、opt-in 认领警告；桌面桥不开放 Git 元数据），
+  开发分组以手动标记为准。
   不再抓取远程目录，不再翻译，不再排行。
 author: krintcal
 kind: standalone
@@ -20,7 +23,7 @@ platforms:
   - linux
   - macos
   - windows
-requires_hermes: ">=0.21.2"
+requires_hermes: ">=0.22.5"
 provides_tools: []
 provides_hooks: []
 requires_env: []
